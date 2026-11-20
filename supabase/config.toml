@@ -1,0 +1,11 @@
+project_id = "goodmath"
+
+[functions.assessment]
+verify_jwt = false
+import_map = "./functions/deno.json"
+[functions.account]
+verify_jwt = false
+import_map = "./functions/deno.json"
+[functions.worker]
+verify_jwt = false
+import_map = "./functions/deno.json"
