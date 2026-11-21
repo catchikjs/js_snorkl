@@ -41,6 +41,7 @@ import { Author, newWork } from "./Author";
 import { Notebook } from "./Notebook";
 import { Bulk } from "./Bulk";
 import { Progress } from "./Progress";
+import { Roster } from "./Roster";
 import { Review, Released, exportCsv } from "./Review";
 import "./style.css";
 const date = (t) =>
@@ -179,7 +180,7 @@ function Login() {
           <p>
             {mode === "학생 활성화"
               ? "선생님께 받은 학번과 개인 활성화 코드를 입력하고, 사용할 비밀번호를 6자 이상으로 정하세요."
-              : "등록된 학번과 직접 정한 비밀번호로 로그인하세요. 처음 이용하면 ‘학생 활성화’를 먼저 진행하세요."}
+              : "선생님께 받은 학번과 비밀번호로 로그인하세요. 활성화 코드를 받은 경우에는 ‘학생 활성화’를 이용하세요."}
           </p>
         )}
         <form
@@ -455,6 +456,7 @@ function ClassApp({ uid }) {
         ["내 평가", Layers],
         ["평가 만들기", ClipboardPen],
         ["학급별 배포", Send],
+        ["학생 관리", GraduationCap],
         ["제출·검토", ClipboardList],
         ["학습 기록", History],
       ]
@@ -603,7 +605,7 @@ function ClassApp({ uid }) {
             value={cl?.id || ""}
             onChange={(e) => {
               chooseClass(e.target.value);
-              go(teacher ? "내 평가" : "할 일");
+              go(teacher ? (page === "학생 관리" ? "학생 관리" : "내 평가") : "할 일");
             }}
           >
             {classes.map((c) => (
@@ -614,6 +616,7 @@ function ClassApp({ uid }) {
           </select>
         </header>
         <div className="content">
+          {teacher && cl && page === "학생 관리" && <Roster key={cl.id} classroom={cl} />}
           {note && (
             <p className="notice" role="alert">
               {note}

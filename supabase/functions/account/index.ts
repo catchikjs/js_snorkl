@@ -1,8 +1,18 @@
 import { admin, endpoint, env } from "../_shared/server.ts";
 import { hash } from "../_shared/contract.js";
+import { enrollStudent, EnrollmentError } from "../_shared/enrollment.js";
 endpoint(async (req) => {
-  const db = admin(),
-    { op, number, password, code } = await req.json(),
+  const db = admin();
+  const input = await req.json();
+  if (input.op === "enroll") {
+    const { data, error } = await db.auth.getUser(
+      (req.headers.get("authorization") || "").replace(/^Bearer /i, ""),
+    );
+    if (error || !data.user) throw new EnrollmentError("교사 계정으로 로그인하세요.");
+    return await enrollStudent(db, data.user.id, input,
+      env("STUDENT_SCHOOL").trim(), Number(env("STUDENT_YEAR")));
+  }
+  const { op, number, password, code } = input,
     p = {
       school: env("STUDENT_SCHOOL").trim(),
       year: Number(env("STUDENT_YEAR")),
