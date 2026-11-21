@@ -123,7 +123,7 @@ function Art() {
     </svg>
   );
 }
-function PasswordInput({ id, name, value, onChange, required = false, autoFocus = false }) {
+function PasswordInput({ id, name, value, onChange, required = false, autoFocus = false, minLength = 0 }) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="password-input">
@@ -133,6 +133,7 @@ function PasswordInput({ id, name, value, onChange, required = false, autoFocus 
         type={visible ? "text" : "password"}
         autoComplete="current-password"
         required={required}
+        minLength={minLength}
         autoFocus={autoFocus}
         value={value}
         onChange={onChange}
@@ -177,7 +178,7 @@ function Login() {
         {mode !== "교사" && (
           <p>
             {mode === "학생 활성화"
-              ? "선생님께 받은 학번과 개인 활성화 코드를 입력하고, 사용할 비밀번호를 10자 이상으로 정하세요."
+              ? "선생님께 받은 학번과 개인 활성화 코드를 입력하고, 사용할 비밀번호를 6자 이상으로 정하세요."
               : "등록된 학번과 직접 정한 비밀번호로 로그인하세요. 처음 이용하면 ‘학생 활성화’를 먼저 진행하세요."}
           </p>
         )}
@@ -238,13 +239,14 @@ function Login() {
             </label>
           ))}
           <label htmlFor="login-password">
-            {mode === "학생 활성화" ? "새 비밀번호 (10자 이상)" : "비밀번호"}
+            {mode === "학생 활성화" ? "새 비밀번호 (6자 이상)" : "비밀번호"}
           </label>
           <div>
             <PasswordInput
               id="login-password"
               name="password"
               required
+              minLength={mode === "학생 활성화" ? 6 : 0}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />

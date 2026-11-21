@@ -29,7 +29,7 @@ endpoint(async (req) => {
   if (!(await cmd("limit", { key: await digest(JSON.stringify(p)) })))
     throw Error("rate");
   if (op === "activate") {
-    if (password.length < 10 || typeof code !== "string" || !code.trim())
+    if (password.length < 6 || typeof code !== "string" || !code.trim())
       throw Error("invalid");
     const a = await cmd("activate", {
       ...p,
