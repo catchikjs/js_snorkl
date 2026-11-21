@@ -1,19 +1,89 @@
-.roster .panel { margin-bottom: 24px; }
-.roster p { line-height: 1.6; }
-.roster details { margin: 20px 0; }
-.roster summary { cursor: pointer; font-weight: 700; }
-.roster textarea { display: block; width: 100%; min-height: 110px; margin: 10px 0; }
-.roster fieldset { padding: 0; border: 0; min-width: 0; }
-.roster-inputs { display: grid; gap: 16px; margin: 20px 0; }
-.roster-row { display: grid; grid-template-columns: 1fr 1fr 1.4fr auto; gap: 12px; align-items: end; }
-.roster-row label { min-width: 0; }
-.roster-row input { display: block; width: 100%; margin-top: 6px; }
-.roster-row-status { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; }
-.roster-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.roster .roster-row button, .roster .roster-actions button { width: auto; }
-.roster table { width: 100%; border-collapse: collapse; }
-.roster th, .roster td { padding: 12px; text-align: left; border-bottom: 1px solid #e1e5ef; overflow-wrap: anywhere; }
-@media (max-width: 650px) {
-  .roster-row { grid-template-columns: 1fr 1fr; border-bottom: 1px solid #e1e5ef; padding-bottom: 16px; }
+.roster .panel {
+  margin-bottom: 24px;
 }
-@media print { .roster form, .roster details { display: none; } }
+.roster p {
+  line-height: 1.6;
+}
+.roster details {
+  margin: 20px 0;
+}
+.roster summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.roster textarea {
+  display: block;
+  width: 100%;
+  min-height: 110px;
+  margin: 10px 0;
+}
+.roster fieldset {
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.roster .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.roster-inputs {
+  display: grid;
+  gap: 16px;
+  margin: 20px 0;
+}
+.roster-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr auto;
+  gap: 12px;
+  align-items: end;
+}
+.roster-row label {
+  min-width: 0;
+}
+.roster-row input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+.roster-row-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.roster-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.roster .panel form .roster-row button,
+.roster .panel form .roster-actions button {
+  width: auto;
+}
+.roster table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.roster th,
+.roster td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #e1e5ef;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 650px) {
+  .roster-row {
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid #e1e5ef;
+    padding-bottom: 16px;
+  }
+}
+@media print {
+  .roster form,
+  .roster details {
+    display: none;
+  }
+}

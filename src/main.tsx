@@ -41,7 +41,7 @@ import { Author, newWork } from "./Author";
 import { Notebook } from "./Notebook";
 import { Bulk } from "./Bulk";
 import { Progress } from "./Progress";
-import { Roster } from "./Roster";
+import { StudentRoster } from "./StudentRoster";
 import { Review, Released, exportCsv } from "./Review";
 import "./style.css";
 const date = (t) =>
@@ -616,7 +616,7 @@ function ClassApp({ uid }) {
           </select>
         </header>
         <div className="content">
-          {teacher && cl && page === "학생 관리" && <Roster key={cl.id} classroom={cl} />}
+          {teacher && cl && page === "학생 관리" && <StudentRoster key={cl.id} classroom={cl} />}
           {note && (
             <p className="notice" role="alert">
               {note}

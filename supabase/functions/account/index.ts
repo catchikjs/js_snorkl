@@ -1,6 +1,15 @@
 import { admin, endpoint, env } from "../_shared/server.ts";
 import { hash } from "../_shared/contract.js";
 import { enrollStudent, EnrollmentError } from "../_shared/enrollment.js";
+function studentSchool() {
+  const encoded = Deno.env.get("STUDENT_SCHOOL_BASE64");
+  // Some hosted runtimes corrupt non-ASCII environment values. Decode UTF-8 explicitly.
+  return encoded
+    ? new TextDecoder("utf-8", { fatal: true })
+        .decode(Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0)))
+        .trim()
+    : env("STUDENT_SCHOOL").trim();
+}
 endpoint(async (req) => {
   const db = admin();
   const input = await req.json();
@@ -8,13 +17,19 @@ endpoint(async (req) => {
     const { data, error } = await db.auth.getUser(
       (req.headers.get("authorization") || "").replace(/^Bearer /i, ""),
     );
-    if (error || !data.user) throw new EnrollmentError("교사 계정으로 로그인하세요.");
-    return await enrollStudent(db, data.user.id, input,
-      env("STUDENT_SCHOOL").trim(), Number(env("STUDENT_YEAR")));
+    if (error || !data.user)
+      throw new EnrollmentError("교사 계정으로 로그인하세요.");
+    return await enrollStudent(
+      db,
+      data.user.id,
+      input,
+      studentSchool(),
+      Number(env("STUDENT_YEAR")),
+    );
   }
   const { op, number, password, code } = input,
     p = {
-      school: env("STUDENT_SCHOOL").trim(),
+      school: studentSchool(),
       year: Number(env("STUDENT_YEAR")),
       number: typeof number === "string" ? number.trim() : "",
     };
