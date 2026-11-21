@@ -16,6 +16,13 @@ const classroom = new Set(
   ),
 );
 export async function dispatch(op, p, command, read) {
+  if (op === "deleteBook")
+    return command("math_hidden_books", "hide", p);
+  if (op === "library") {
+    const books = await command("math_library", op, p),
+      hidden = await command("math_hidden_books", "list", {});
+    return books.filter((book) => !hidden.includes(book.id));
+  }
   if (op === "review") {
     for (const value of [
       p.transcription,

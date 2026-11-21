@@ -18,10 +18,22 @@ export const rpc = async (db, fn, args) =>
   ).rows[0].value;
 export async function database(dir) {
   const db = new PGlite(dir);
-  if (
-    (await db.query("select to_regclass('math_private.books') as b")).rows[0].b
-  )
+  if ((await db.query("select to_regclass('math_private.books') as b")).rows[0].b) {
+    if (
+      !(await db.query("select to_regclass('math_private.hidden_books') as b"))
+        .rows[0].b
+    )
+      await db.exec(
+        await readFile("supabase/migrations/202611200007_hidden_books.sql", "utf8"),
+      );
+    await db.exec(
+      await readFile("supabase/migrations/202611200008_queue_send.sql", "utf8"),
+    );
+    await db.exec(
+      await readFile("supabase/migrations/202611200009_draft_matching.sql", "utf8"),
+    );
     return db;
+  }
   await db.transaction(async (db) => {
     await db.exec(`create role anon;create role authenticated;create role service_role;
  create schema auth;create table auth.users(id uuid primary key,email text);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.uid',true),'')::uuid$$;
@@ -29,7 +41,7 @@ export async function database(dir) {
  grant usage on schema auth,storage to authenticated;grant select,insert on storage.objects to authenticated;
  create schema pgmq;create table pgmq.messages(msg_id bigint generated always as identity primary key,message jsonb,vt timestamptz default now());
  create function pgmq.create(text) returns void language sql as $$select$$;
- create function pgmq.send(text,jsonb) returns bigint language sql as $$insert into pgmq.messages(message) values($2) returning msg_id$$;
+ create function pgmq.send(text,jsonb) returns setof bigint language sql as $$insert into pgmq.messages(message) values($2) returning msg_id$$;
  create function pgmq.read(text,int,int) returns setof pgmq.messages language sql as $$update pgmq.messages set vt=now()+make_interval(secs=>$2) where msg_id in(select msg_id from pgmq.messages where vt<=now() order by msg_id limit $3 for update skip locked) returning *$$;
  create function pgmq.archive(text,bigint) returns boolean language sql as $$delete from pgmq.messages where msg_id=$2 returning true$$;
  `);

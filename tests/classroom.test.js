@@ -126,6 +126,7 @@ test("distribution links, copy isolation, question revision, stale approval", as
   const work = await cmd(teacher, "book", { book: copy });
   assert.equal(work.generated[0].revision, 1);
   assert.equal(work.revision, 2);
+  assert.equal(work.generated[0].matches_working, true);
   await assert.rejects(
     cmd(teacher, "approve", { book: copy, revision: 1, working: book.working }),
   );

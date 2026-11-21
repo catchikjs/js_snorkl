@@ -102,29 +102,42 @@ function hasContent(parts) {
     (n) => (n.type === "math" ? n.latex : n.text).trim().length > 0,
   );
 }
+export class BookValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "BookValidationError";
+  }
+}
 export function validateBook(body, approve) {
-  const b = bookSchema.parse(body);
+  const parsed = bookSchema.safeParse(body);
+  if (!parsed.success) {
+    const path = parsed.error.issues[0]?.path || [];
+    throw new BookValidationError(path[0] === "questions" && typeof path[1] === "number"
+      ? `문항 ${path[1] + 1}의 입력 형식을 확인하세요. 배점은 0보다 커야 하며, 답안과 루브릭 항목을 모두 입력해야 합니다.`
+      : "평가명, 문항 수, 응시 횟수 등 평가 설정의 입력 형식을 확인하세요.");
+  }
+  const b = parsed.data;
   if (
     b.questions.some(
       (q) => q.public.images.reduce((n, im) => n + im.png.length, 0) > 8000000,
     )
   )
-    throw Error("image budget");
+    throw new BookValidationError("한 문항의 이미지 용량이 너무 큽니다. 캡처 범위나 이미지 수를 줄여 주세요.");
   if (b.kind === "간단퀴즈" && b.questions.length > 10)
-    throw Error("quiz limit");
+    throw new BookValidationError("간단퀴즈는 최대 10문항입니다. 문항 수를 줄이거나 수행평가로 변경하세요.");
   if (approve) {
-    if (!(Date.parse(b.ends) > Date.parse(b.starts))) throw Error("period");
-    for (const q of b.questions) {
+    if (!(Date.parse(b.ends) > Date.parse(b.starts))) throw new BookValidationError("문제 편집에서 마감 시간을 시작 시간보다 늦게 설정하세요.");
+    for (const [index, q] of b.questions.entries()) {
+      const prefix = `문항 ${index + 1}: `;
       if (!hasContent(q.public.prompt) && !q.public.images.length)
-        throw Error("empty question");
-      if (
-        !hasContent(q.private.answer) ||
-        !hasContent(q.private.solution) ||
-        new Set(q.private.criteria.map((c) => c.id)).size !==
-          q.private.criteria.length ||
-        q.private.criteria.reduce((sum, c) => sum + c.max, 0) !== q.points
-      )
-        throw Error("answer or points");
+        throw new BookValidationError(prefix + "문제 내용이나 이미지를 추가하세요.");
+      if (!hasContent(q.private.answer) || !hasContent(q.private.solution))
+        throw new BookValidationError(prefix + "교사 편집본에 정답과 풀이가 필요합니다. 해당 문항에서 ‘이 초안을 편집본에 반영’을 누르거나 직접 입력하세요.");
+      if (new Set(q.private.criteria.map((c) => c.id)).size !== q.private.criteria.length)
+        throw new BookValidationError(prefix + "중복된 루브릭 항목을 확인하세요.");
+      const total = q.private.criteria.reduce((sum, c) => sum + c.max, 0);
+      if (Math.abs(total - q.points) > 1e-8)
+        throw new BookValidationError(prefix + `루브릭 합계 ${total}점이 문항 배점 ${q.points}점과 다릅니다. 배점을 맞춰 주세요.`);
       for (const field of [
         q.public.prompt,
         ...q.public.choices,
@@ -138,8 +151,10 @@ export function validateBook(body, approve) {
           "check",
         ].map((k) => q.private[k]),
         ...q.private.criteria.flatMap((c) => [c.label, c.standard, c.partial]),
-      ])
-        checkMath(field);
+      ]) {
+        try { checkMath(field); }
+        catch { throw new BookValidationError(prefix + "수식 형식을 확인하세요. ‘ƒ 수식’에서 잘못된 LaTeX를 수정해 주세요."); }
+      }
     }
   }
   return b;

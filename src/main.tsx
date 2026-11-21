@@ -24,6 +24,9 @@ import {
   LogOut,
   Plus,
   BookMarked,
+  Trash2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   api,
@@ -120,10 +123,37 @@ function Art() {
     </svg>
   );
 }
+function PasswordInput({ id, name, value, onChange, required = false, autoFocus = false }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="password-input">
+      <input
+        id={id}
+        name={name}
+        type={visible ? "text" : "password"}
+        autoComplete="current-password"
+        required={required}
+        autoFocus={autoFocus}
+        value={value}
+        onChange={onChange}
+      />
+      <button
+        className="password-toggle"
+        type="button"
+        aria-label={visible ? "비밀번호 숨기기" : "비밀번호 표시"}
+        aria-pressed={visible}
+        onClick={() => setVisible((current) => !current)}
+      >
+        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  );
+}
 function Login() {
   const [mode, set] = useState("교사"),
     [note, say] = useState(""),
-    [busy, lock] = useState(false);
+    [busy, lock] = useState(false),
+    [password, setPassword] = useState("");
   return (
     <main className="login">
       <Brand />
@@ -191,10 +221,18 @@ function Login() {
               <input name={k} required />
             </label>
           ))}
-          <label>
+          <label htmlFor="login-password">
             {mode === "학생 활성화" ? "새 비밀번호 (10자 이상)" : "비밀번호"}
-            <input name="password" required type="password" />
           </label>
+          <div>
+            <PasswordInput
+              id="login-password"
+              name="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
           <button className="primary" disabled={busy}>
             {" "}
             {mode === "학생 활성화" ? "활성화" : "로그인"}
@@ -223,7 +261,11 @@ function ClassApp({ uid }) {
     [summary, sum] = useState<any>({}),
     [reflection, reflect] = useState(""),
     [sFilter, statusFilter] = useState("전체"),
-    [position, byPosition] = useState("전체");
+    [position, byPosition] = useState("전체"),
+    [teacherLoginOpen, showTeacherLogin] = useState(false),
+    [teacherPassword, setTeacherPassword] = useState(""),
+    [teacherLoginError, setTeacherLoginError] = useState(""),
+    [teacherLoginBusy, setTeacherLoginBusy] = useState(false);
   const teacher = home.classes.some((c) => c.role === "teacher"),
     classes = home.classes.filter((c) =>
       teacher ? c.role === "teacher" : true,
@@ -236,6 +278,16 @@ function ClassApp({ uid }) {
     q = detail?.questions.find((q) => q.id === qId);
   const refresh = async () => {
     const h = await api("home");
+    if (demo) {
+      const actualPersona = h.classes.some((c) => c.role === "teacher")
+        ? "teacher"
+        : "student";
+      if (persona() !== actualPersona) {
+        sessionStorage.setItem("math-persona", actualPersona);
+        location.reload();
+        return;
+      }
+    }
     homeSet(h);
     if (h.classes.some((c) => c.role === "teacher"))
       books(await api("library"));
@@ -484,11 +536,17 @@ function ClassApp({ uid }) {
           {demo ? (
             <button
               onClick={() => {
-                sessionStorage.setItem(
-                  "math-persona",
-                  teacher ? "student" : "teacher",
-                );
-                location.assign("/");
+                if (teacher) {
+                  safe(async () => {
+                    await api("teacher-logout");
+                    sessionStorage.setItem("math-persona", "student");
+                    location.assign("/");
+                  });
+                } else {
+                  setTeacherPassword("");
+                  setTeacherLoginError("");
+                  showTeacherLogin(true);
+                }
               }}
             >
               {teacher ? "학생" : "교사"} 모드로 전환 <ArrowUpRight size={14} />
@@ -621,21 +679,46 @@ function ClassApp({ uid }) {
                   {library
                     .filter((b) => b.class_id === cl?.id)
                     .map((b) => (
-                      <button
-                        className="listrow"
-                        key={b.id}
-                        onClick={() => {
-                          edit(b.id);
-                          nav("내 평가");
-                        }}
-                      >
-                        <BookMarked />
-                        <strong>{b.title}</strong>
-                        <span>
-                          {b.approved === b.revision ? "확정" : "초안"}
-                        </span>
-                        <ChevronRight />
-                      </button>
+                      <div className="assessment-row" key={b.id}>
+                        <button
+                          className="listrow"
+                          onClick={() => {
+                            edit(b.id);
+                            nav("내 평가");
+                          }}
+                        >
+                          <BookMarked />
+                          <strong>{b.title}</strong>
+                          <span>
+                            {b.approved === b.revision ? "확정" : "초안"}
+                          </span>
+                          <ChevronRight />
+                        </button>
+                        <button
+                          className="assessment-delete"
+                          aria-label={`${b.title} 평가 삭제`}
+                          title="평가 목록에서 삭제"
+                          onClick={() =>
+                            safe(async () => {
+                              if (
+                                !window.confirm(
+                                  `“${b.title}” 평가를 목록에서 삭제할까요? 이미 배포된 과제와 학생 제출 기록은 유지됩니다.`,
+                                )
+                              )
+                                return;
+                              await api("deleteBook", { book: b.id });
+                              books(await api("library"));
+                              if (book === b.id) {
+                                edit("");
+                                nav("내 평가");
+                              }
+                              say("평가를 목록에서 삭제했습니다.");
+                            })
+                          }
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </div>
                     ))}
                 </section>
               ) : (
@@ -1023,6 +1106,65 @@ function ClassApp({ uid }) {
           )}
         </div>
       </main>
+      {demo && teacherLoginOpen && (
+        <div className="overlay">
+          <section role="dialog" aria-modal="true" aria-labelledby="teacher-login-title">
+            <header>
+              <h2 id="teacher-login-title">교사 모드 비밀번호</h2>
+            </header>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setTeacherLoginBusy(true);
+                setTeacherLoginError("");
+                try {
+                  await api("teacher-login", { password: teacherPassword });
+                  const home = await api("home");
+                  if (!home.classes.some((c) => c.role === "teacher"))
+                    throw Error("교사 세션을 확인하지 못했습니다. 브라우저의 쿠키 설정을 확인하세요.");
+                  sessionStorage.setItem("math-persona", "teacher");
+                  location.assign("/");
+                } catch (e) {
+                  setTeacherLoginError(
+                    e instanceof TypeError
+                      ? "개발 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요."
+                      : message(e),
+                  );
+                } finally {
+                  setTeacherLoginBusy(false);
+                }
+              }}
+            >
+              <label htmlFor="teacher-password">
+                <span>비밀번호</span>
+              </label>
+              <PasswordInput
+                id="teacher-password"
+                autoFocus
+                required
+                name="teacher-password"
+                value={teacherPassword}
+                onChange={(e) => setTeacherPassword(e.target.value)}
+              />
+              {teacherLoginError && <p role="alert">{teacherLoginError}</p>}
+              <div className="tools">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTeacherPassword("");
+                    showTeacherLogin(false);
+                  }}
+                >
+                  취소
+                </button>
+                <button className="primary" disabled={teacherLoginBusy}>
+                  {teacherLoginBusy ? "확인 중…" : "교사 모드로 전환"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

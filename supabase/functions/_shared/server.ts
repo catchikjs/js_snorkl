@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { BookValidationError } from "./contract.js";
 export const env = (k: string) => {
   const v = Deno.env.get(k);
   if (!v) throw Error("configuration");
@@ -29,10 +30,10 @@ export function endpoint(fn: (req: Request) => Promise<unknown>) {
       return new Response(JSON.stringify({ value: await fn(req) }), {
         headers,
       });
-    } catch {
+    } catch (error) {
       return new Response(
         JSON.stringify({
-          error:
+          error: error instanceof BookValidationError ? error.message :
             "요청을 처리하지 못했습니다. 입력 내용과 접근 권한을 확인해 주세요.",
         }),
         { status: 400, headers },

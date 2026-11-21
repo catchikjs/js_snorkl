@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { api, message, fileUrl, demo } from "./api";
 import { Field, Rich, txt, plain } from "./MathEditor";
 import { Capture } from "./Capture";
+import { matchesDraft, prepareApproval } from "./authoring.js";
 export const blankQuestion = () => ({
   public: { prompt: [], images: [], choices: [], required: true },
   points: 10,
@@ -46,6 +47,10 @@ const labelNames = {
   alternatives: "다른 풀이",
   errors: "예상 오개념",
   check: "확인할 사항",
+};
+const unitsBySubject = {
+  공통수학1: ["다항식", "방정식과 부등식", "경우의 수", "행렬"],
+  공통수학2: ["도형의 방정식", "집합과 명제", "함수와 그래프"],
 };
 export function download(name, href) {
   const a = document.createElement("a");
@@ -147,15 +152,23 @@ export function Author({ id, classes, open, changed }) {
     pub = (k, v) => update({ ...q, public: { ...q.public, [k]: v } }),
     priv = (k, v) => update({ ...q, private: { ...q.private, [k]: v } });
   const dirty = JSON.stringify(w) !== JSON.stringify(meta.working);
+  const drafts = meta.generated.filter((g) => g.position === pos + 1);
+  const currentDraft = drafts.find((g) => matchesDraft(g, w, meta, pos));
+  const aiNotReady = !demo && meta.ai?.ready === false;
+  const pending = currentDraft && !currentDraft.data &&
+    ["queued", "processing", "retry_wait"].includes(currentDraft.status);
+  const hasProblem = (question) => question.public.images.length > 0 ||
+    question.public.prompt.some((part) => (part.text || part.latex || "").trim());
   async function save(op) {
-    await api(op, { book: id, revision: baseRevision.current, working: w });
+    const prepared = op === "approve" ? prepareApproval(w, meta) : { working: w, applied: 0 };
+    await api(op, { book: id, revision: baseRevision.current, working: prepared.working });
     await reload(true);
     changed();
     say(
       op === "generate"
         ? "문제 버전을 저장하고 AI 초안을 요청했습니다."
         : op === "approve"
-          ? "답안과 루브릭을 확정했습니다."
+          ? `${prepared.applied ? `빈 편집본 ${prepared.applied}개에 AI 초안을 반영하고 ` : ""}답안과 루브릭을 확정했습니다.`
           : "저장했습니다.",
     );
     if (op === "generate") show(1);
@@ -192,16 +205,22 @@ export function Author({ id, classes, open, changed }) {
         ))}
       </div>
       {note && <p role="status">{note}</p>}
+      {tab < 2 && aiNotReady && (
+        <section className="panel" role="status">
+          <h3>AI 연결 설정이 필요합니다</h3>
+          <p>현재 AI가 문제를 분석하고 있지 않습니다. API 키와 모델 설정을 완료하면 접수된 요청을 처리합니다. 문제는 임시 저장할 수 있습니다.</p>
+        </section>
+      )}
       {tab < 2 && (
         <>
           <div className="tools">
-            {w.questions.map((_, i) => (
+            {w.questions.map((question, i) => (
               <button
                 className={i === pos ? "selected" : ""}
                 key={i}
                 onClick={() => index(i)}
               >
-                문항 {i + 1}
+                문항 {i + 1}{!hasProblem(question) ? " · 내용 없음" : ""}
               </button>
             ))}
             <button
@@ -256,26 +275,38 @@ export function Author({ id, classes, open, changed }) {
                         <option>수행평가</option>
                       </select>
                     </label>
-                    {[
-                      ["subject", "과목"],
-                      ["unit", "단원"],
-                      ["difficulty", "난이도"],
-                    ].map(([k, l]) => (
-                      <label key={k}>
-                        {l}
-                        <input
-                          list={k === "subject" ? "subject-options" : undefined}
-                          value={w[k]}
-                          onChange={(e) => setW(k, e.target.value)}
-                        />
-                        {k === "subject" && (
-                          <datalist id="subject-options">
-                            <option value="공통수학1" />
-                            <option value="공통수학2" />
-                          </datalist>
-                        )}
-                      </label>
-                    ))}
+                    <label>
+                      과목
+                      <select
+                        value={w.subject}
+                        onChange={(e) =>
+                          set({ ...w, subject: e.target.value, unit: "" })
+                        }
+                      >
+                        {Object.keys(unitsBySubject).map((subject) => (
+                          <option key={subject}>{subject}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      단원
+                      <select
+                        value={w.unit}
+                        onChange={(e) => setW("unit", e.target.value)}
+                      >
+                        <option value="">단원을 선택하세요</option>
+                        {(unitsBySubject[w.subject] || []).map((unit) => (
+                          <option key={unit}>{unit}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      난이도
+                      <input
+                        value={w.difficulty}
+                        onChange={(e) => setW("difficulty", e.target.value)}
+                      />
+                    </label>
                   </div>
                   <label>
                     안내
@@ -370,44 +401,7 @@ export function Author({ id, classes, open, changed }) {
                 <>
                   <h2>출제 문제</h2>
                   <Problem q={q.public} />
-                  <h3>{demo ? "개발용 모의 답안 초안" : "AI 답안 초안"}</h3>
-                  {meta.generated
-                    .filter((g) => g.position === pos + 1)
-                    .map((g, i) => (
-                      <details key={i}>
-                        <summary>
-                          문제 버전 {g.revision} ·{" "}
-                          {g.data
-                            ? "초안 도착"
-                            : g.status === "failed"
-                              ? "생성 실패"
-                              : "생성 대기"}
-                        </summary>
-                        {g.data && (
-                          <>
-                            <Rich value={g.data.answer} />
-                            <Rich value={g.data.solution} />
-                            <button
-                              disabled={dirty || g.revision !== meta.revision}
-                              onClick={() =>
-                                update({
-                                  ...q,
-                                  private: structuredClone(g.data),
-                                })
-                              }
-                            >
-                              이 초안을 편집본에 반영
-                            </button>
-                          </>
-                        )}
-                      </details>
-                    ))}
-                  <button
-                    disabled={busy}
-                    onClick={() => action(() => save("generate"))}
-                  >
-                    다시 생성
-                  </button>
+
                 </>
               )}
             </section>
@@ -453,7 +447,61 @@ export function Author({ id, classes, open, changed }) {
                 </>
               ) : (
                 <>
+                  <h3>{demo ? "개발용 모의 답안 초안" : "AI 답안 초안"}</h3>
+                  {!hasProblem(q) && <p role="status">선택한 문항에는 문제 내용이나 이미지가 없습니다. 위에서 이미지가 있는 문항을 선택하거나 문제 편집에서 내용을 추가해 주세요.</p>}
+                  <p>
+                    {demo
+                      ? "개발 모드에서는 실제 AI를 호출하지 않고 모의 초안을 표시합니다."
+                      : "문제 내용과 첨부한 캡처 이미지를 함께 읽어 정답과 풀이 초안을 만듭니다. 생성된 내용은 교사가 확인하고 편집할 수 있습니다."}
+                  </p>
+                  {!drafts.length && <p>아직 생성된 초안이 없습니다. 문제를 저장하고 AI 초안 생성을 요청하세요.</p>}
+                  {pending && !aiNotReady && (
+                    <p role="status">{currentDraft.status === "processing" ? "AI가 이미지의 문제를 읽고 풀이를 작성하고 있습니다." : "생성 요청이 접수되었습니다. 자동 처리 순서를 기다리는 중입니다."} 완료되면 아래에 정답과 풀이가 표시됩니다.</p>
+                  )}
+                  {drafts
+                    .map((g, i) => (
+                      <details key={`${g.revision}-${i}`} open={i === 0}>
+                        <summary>
+                          문제 버전 {g.revision} ·{" "}
+                          {g.data
+                            ? "초안 도착"
+                            : g.status === "failed"
+                              ? "생성 실패"
+                              : aiNotReady ? "AI 연결 설정 대기"
+                              : g.status === "processing" ? "풀이 작성 중"
+                              : g.status === "retry_wait" ? "재시도 대기" : "생성 대기"}
+                        </summary>
+                        {g.data && (
+                          <>
+                            <h3>AI 정답</h3>
+                            <Rich value={g.data.answer} />
+                            <h3>AI 단계별 풀이</h3>
+                            <Rich value={g.data.solution} />
+                            {!!g.data.check?.length && <><h3>확인할 사항</h3><Rich value={g.data.check} /></>}
+                            <button
+                              disabled={busy || !matchesDraft(g, w, meta, pos)}
+                              onClick={() =>
+                                update({
+                                  ...q,
+                                  private: structuredClone(g.data),
+                                })
+                              }
+                            >
+                              이 초안을 편집본에 반영
+                            </button>
+                          </>
+                        )}
+                        {g.status === "failed" && !g.data && <p>초안을 생성하지 못했습니다. AI 연결 설정과 사용 가능 한도를 확인한 뒤 다시 생성해 주세요.</p>}
+                      </details>
+                    ))}
+                  <button
+                    disabled={busy || aiNotReady || (!!pending && !dirty)}
+                    onClick={() => action(() => save("generate"))}
+                  >
+                    {pending ? "생성 대기 중" : "다시 생성"}
+                  </button>
                   <h2>교사 편집본</h2>
+                  <p>위의 AI 초안을 확인한 뒤 ‘이 초안을 편집본에 반영’을 누르면 아래 정답과 풀이가 채워집니다.</p>
                   {(dirty || meta.approved !== meta.revision) && (
                     <p>재검토 필요 · 현재 문제와 답안을 확인하세요.</p>
                   )}
@@ -556,6 +604,8 @@ export function Author({ id, classes, open, changed }) {
               )}
             </section>
           </div>
+          {note && <p role="status">{note}</p>}
+          {tab === 1 && <p>최종 확정 시 수정하지 않은 빈 편집본에는 현재 문제와 일치하는 최신 AI 초안을 반영합니다. 직접 수정한 답안과 배점은 유지합니다.</p>}
           <footer>
             <button
               disabled={busy}
@@ -564,13 +614,13 @@ export function Author({ id, classes, open, changed }) {
               임시 저장
             </button>
             <button
-              disabled={busy}
+              disabled={busy || (tab === 0 && (aiNotReady || (!!pending && !dirty)))}
               className="primary"
               onClick={() =>
                 action(() => save(tab === 0 ? "generate" : "approve"))
               }
             >
-              {tab === 0 ? "문제 작성 완료" : "최종 확정"}
+              {busy ? "처리 중…" : tab === 0 ? "저장하고 AI 답안 초안 생성" : "최종 확정"}
             </button>
           </footer>
         </>

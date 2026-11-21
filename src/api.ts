@@ -13,10 +13,21 @@ export const persona = () =>
 async function local(op, p) {
   const r = await fetch("/__classroom", {
     method: "POST",
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ op, p, persona: persona() }),
   });
-  if (!r.ok) throw Error("입력 내용과 권한, 제출 기간을 확인하세요.");
+  if (!r.ok) {
+    if (op === "teacher-login" && r.status === 401)
+      throw Error("비밀번호가 일치하지 않습니다. .env.local의 교사 모드 비밀번호를 확인하세요.");
+    if (r.status === 403)
+      throw Error("로컬 개발 서버에 접근할 수 없습니다. localhost 또는 127.0.0.1 주소로 접속하세요.");
+    if (op === "teacher-login")
+      throw Error(`교사 로그인 요청을 처리하지 못했습니다 (${r.status}). 개발 서버를 다시 시작해 주세요.`);
+    if (op === "home")
+      throw Error(`교실 정보를 불러오지 못했습니다 (${r.status}). 개발 서버 터미널의 오류를 확인해 주세요.`);
+    throw Error("요청을 완료하지 못했습니다. 개발 서버 상태를 확인하세요.");
+  }
   return (await r.json()).value;
 }
 export async function api(op: string, p: any = {}): Promise<any> {
@@ -24,8 +35,11 @@ export async function api(op: string, p: any = {}): Promise<any> {
   const { data, error } = await client.functions.invoke("assessment", {
     body: { op, p },
   });
-  if (error)
-    throw Error("요청을 완료하지 못했습니다. 연결과 입력 내용을 확인하세요.");
+  if (error) {
+    let detail;
+    try { detail = await error.context?.json(); } catch { /* No JSON error body. */ }
+    throw Error(typeof detail?.error === "string" ? detail.error : "요청을 완료하지 못했습니다. 연결과 입력 내용을 확인하세요.");
+  }
   return data.value;
 }
 export const dataUrl = (blob: Blob) =>

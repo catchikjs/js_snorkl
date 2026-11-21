@@ -123,6 +123,31 @@ label select {
   width: 100%;
   margin-top: 6px;
 }
+.password-input {
+  position: relative;
+  margin-top: 6px;
+}
+.password-input input {
+  display: block;
+  width: 100%;
+  padding-right: 48px;
+}
+.password-input .password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+.password-input .password-toggle:hover {
+  background: #f3f5ff;
+}
 input[type="checkbox"] {
   width: 18px;
   height: 18px;
@@ -642,6 +667,28 @@ details,
   color: var(--muted);
   font-size: 0.8rem;
 }
+.assessment-row {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--line);
+}
+.assessment-row .listrow {
+  border-top: 0;
+  flex: 1;
+  min-width: 0;
+}
+.assessment-delete {
+  align-self: center;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 8px;
+  border: 0;
+  color: var(--muted);
+}
+.assessment-delete:hover {
+  color: #b42318;
+  background: #fff1f0;
+}
 .back {
   margin-bottom: 15px;
 }
@@ -661,7 +708,7 @@ footer {
   justify-content: flex-end;
   margin: 15px 0;
 }
-.panel form button {
+.panel form button:not(.password-toggle) {
   width: 100%;
 }
 @media (max-width: 1080px) {

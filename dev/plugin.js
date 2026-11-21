@@ -3,8 +3,13 @@ import { database, rpc, student, teacher } from "./database.js";
 import { dispatch } from "../supabase/functions/_shared/gateway.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
-export function classroomDemo() {
+import { randomBytes, timingSafeEqual } from "node:crypto";
+export function classroomDemo(configuredPassword) {
   const dir = process.env.GOODMATH_DEMO_DIR || ".goodmath";
+  const teacherPassword = configuredPassword || randomBytes(12).toString("base64url");
+  const teacherSessions = new Set();
+  if (!configuredPassword)
+    console.info(`[local-classroom] 교사 모드 비밀번호: ${teacherPassword}`);
   let dbPromise;
   return {
     name: "local-classroom",
@@ -15,10 +20,12 @@ export function classroomDemo() {
       }, 1000);
       server.httpServer?.once("close", () => clearInterval(timer));
       server.middlewares.use("/__classroom", async (req, res) => {
-        const send = (value, status = 200) => {
+        let operation = "unknown";
+        const send = (value, status = 200, headers = {}) => {
           res.writeHead(status, {
             "Content-Type": "application/json",
             "Cache-Control": "no-store",
+            ...headers,
           });
           res.end(JSON.stringify({ value }));
         };
@@ -44,10 +51,40 @@ export function classroomDemo() {
             p = {},
             persona,
           } = JSON.parse(Buffer.concat(chunks).toString());
-          const u = persona === "teacher" ? teacher : student(1);
-          dbPromise ??= mkdir(dir, { recursive: true }).then(() =>
-            database(join(dir, "db")),
-          );
+          operation = op;
+          const session = (req.headers.cookie || "")
+            .split(";")
+            .map((part) => part.trim())
+            .find((part) => part.startsWith("goodmath_teacher="))
+            ?.slice("goodmath_teacher=".length);
+          if (op === "teacher-login") {
+            const supplied = Buffer.from(String(p.password || ""));
+            const expected = Buffer.from(teacherPassword);
+            if (
+              supplied.length !== expected.length ||
+              !timingSafeEqual(supplied, expected)
+            )
+              return send(null, 401);
+            const token = randomBytes(32).toString("base64url");
+            teacherSessions.add(token);
+            return send(true, 200, {
+              "Set-Cookie": `goodmath_teacher=${token}; HttpOnly; SameSite=Strict; Path=/__classroom`,
+            });
+          }
+          if (op === "teacher-logout") {
+            if (session) teacherSessions.delete(session);
+            return send(true, 200, {
+              "Set-Cookie":
+                "goodmath_teacher=; HttpOnly; SameSite=Strict; Path=/__classroom; Max-Age=0",
+            });
+          }
+          const u = teacherSessions.has(session) ? teacher : student(1);
+          dbPromise ??= mkdir(dir, { recursive: true })
+            .then(() => database(join(dir, "db")))
+            .catch((error) => {
+              dbPromise = undefined;
+              throw error;
+            });
           const db = await dbPromise;
           const command = (fn, op, p) => rpc(db, fn, [u, op, p]);
           if (op === "upload" || op === "download") {
@@ -91,7 +128,7 @@ export function classroomDemo() {
             ),
           );
         } catch (e) {
-          console.warn("[local-classroom]", e.code || e.name);
+          console.warn("[local-classroom]", operation, e.code || e.name, e.message);
           send(null, 400);
         }
       });

@@ -9,7 +9,7 @@ endpoint(async (req) => {
     );
   if (!user) throw Error("login");
   const { op, p = {} } = await req.json();
-  return dispatch(
+  const value = await dispatch(
     op,
     p,
     async (rpc: string, op: string, p: object) => {
@@ -25,4 +25,14 @@ endpoint(async (req) => {
       return data.arrayBuffer();
     },
   );
+  if (op === "book") {
+    return {
+      ...value,
+      ai: {
+        ready: Deno.env.get("AI_PROVIDER") === "openai" &&
+          !!Deno.env.get("AI_API_KEY")?.trim() && !!Deno.env.get("AI_MODEL")?.trim(),
+      },
+    };
+  }
+  return value;
 });

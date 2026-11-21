@@ -13,6 +13,14 @@ Deno.serve(async (req) => {
     req.headers.get("x-worker-secret") !== env("WORKER_SECRET")
   )
     return new Response(null, { status: 403 });
+  // Keep queued requests intact until the model credentials are configured.
+  if (Deno.env.get("AI_PROVIDER") !== "openai" ||
+      !Deno.env.get("AI_API_KEY")?.trim() || !Deno.env.get("AI_MODEL")?.trim()) {
+    return new Response(JSON.stringify({ error: "ai_not_configured" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const db = admin();
   async function rpc(op: string, p: object) {
     const { data, error } = await db.rpc("math_worker", { op, p });
