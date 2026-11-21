@@ -164,12 +164,23 @@ function Login() {
             <button
               key={x}
               className={x === mode ? "selected" : ""}
-              onClick={() => set(x)}
+              onClick={() => {
+                set(x);
+                say("");
+                setPassword("");
+              }}
             >
               {x}
             </button>
           ))}
         </div>
+        {mode !== "교사" && (
+          <p>
+            {mode === "학생 활성화"
+              ? "선생님께 받은 학번과 개인 활성화 코드를 입력하고, 사용할 비밀번호를 10자 이상으로 정하세요."
+              : "등록된 학번과 직접 정한 비밀번호로 로그인하세요. 처음 이용하면 ‘학생 활성화’를 먼저 진행하세요."}
+          </p>
+        )}
         <form
           onSubmit={async (e) => {
             e.preventDefault();
@@ -208,8 +219,6 @@ function Login() {
           {(mode === "교사"
             ? [["email", "이메일"]]
             : [
-                ["school", "학교"],
-                ["year", "학년도"],
                 ["number", "학번"],
                 ...(mode === "학생 활성화"
                   ? [["code", "개인 활성화 코드"]]
@@ -218,7 +227,14 @@ function Login() {
           ).map(([k, l]) => (
             <label key={k}>
               {l}
-              <input name={k} required />
+              <input
+                name={k}
+                type={k === "email" ? "email" : "text"}
+                autoComplete={k === "code" ? "off" : "username"}
+                autoCapitalize="none"
+                spellCheck={false}
+                required
+              />
             </label>
           ))}
           <label htmlFor="login-password">

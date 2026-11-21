@@ -2,9 +2,19 @@ import { admin, endpoint, env } from "../_shared/server.ts";
 import { hash } from "../_shared/contract.js";
 endpoint(async (req) => {
   const db = admin(),
-    { op, school, year, number, password, code } = await req.json(),
-    p = { school, year, number };
+    { op, number, password, code } = await req.json(),
+    p = {
+      school: env("STUDENT_SCHOOL").trim(),
+      year: Number(env("STUDENT_YEAR")),
+      number: typeof number === "string" ? number.trim() : "",
+    };
   if (
+    !p.school ||
+    !Number.isInteger(p.year) ||
+    p.year < 2000 ||
+    p.year > 9999 ||
+    !p.number ||
+    p.number.length > 100 ||
     !["login", "activate"].includes(op) ||
     typeof password !== "string" ||
     password.length > 200
@@ -19,10 +29,11 @@ endpoint(async (req) => {
   if (!(await cmd("limit", { key: await digest(JSON.stringify(p)) })))
     throw Error("rate");
   if (op === "activate") {
-    if (password.length < 10) throw Error("password");
+    if (password.length < 10 || typeof code !== "string" || !code.trim())
+      throw Error("invalid");
     const a = await cmd("activate", {
       ...p,
-      hash: await digest(env("CODE_PEPPER") + code),
+      hash: await digest(env("CODE_PEPPER") + code.trim()),
     });
     const { error } = await db.auth.admin.updateUserById(a.uid, { password });
     if (error) throw error;

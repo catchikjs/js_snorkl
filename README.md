@@ -61,7 +61,7 @@ npm run dev
    node scripts/enroll.mjs CLASS_UUID 0101 "연습 학생"
    ```
 
-   관리자가 코드 파일을 해당 학생에게 개별 전달합니다. 학생은 **학생 활성화**에서 학교·학년도·학번·코드와 새 비밀번호를 입력합니다. 이후 **학생** 탭에서 로그인합니다. 코드 재발급은 같은 명령의 마지막 인수에 해당 학생의 기존 Auth UUID를 넣습니다. 운영자는 학번과 Auth UUID를 확인하고 재발급해야 합니다. 교사 로그인은 승인된 이메일 계정을 사용합니다.
+   관리자가 코드 파일을 해당 학생에게 개별 전달합니다. 학생은 **학생 활성화**에서 학번·코드와 새 비밀번호(10자 이상)를 입력합니다. 코드는 발급 후 24시간 동안 유효하며 한 번 사용하면 폐기됩니다. 이후 **학생** 탭에서 학번과 본인이 정한 비밀번호로 로그인합니다. 학교·학년도는 서버의 `STUDENT_SCHOOL`, `STUDENT_YEAR` 설정을 사용하며 학생에게 입력받지 않습니다. 학번은 해당 학교·학년도 안에서 중복되지 않아야 하며, 앞자리 0을 포함한 문자열 그대로 등록합니다. 현재 교사 화면에는 명부 파일 업로드 기능이 없으며 관리자 등록 도구를 사용합니다. 코드 재발급은 같은 명령의 마지막 인수에 해당 학생의 기존 Auth UUID를 넣습니다. 운영자는 학번과 Auth UUID를 확인하고 재발급해야 합니다. 교사 로그인은 승인된 이메일 계정을 사용합니다.
 
 ### 환경별 설정
 
@@ -70,6 +70,7 @@ npm run dev
 | Vite/Netlify 공개 환경 | VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY | 해당 환경의 Supabase URL과 publishable key |
 | Vite/Netlify 공개 환경 | VITE_APP_ORIGIN | 링크·QR의 기준 도메인. 생략하면 접속 origin |
 | Edge secrets | APP_ORIGINS | 허용할 앱 origin을 쉼표로 연결. 경로·마지막 슬래시 제외 |
+| Edge secrets | STUDENT_SCHOOL, STUDENT_YEAR | 학생 계정을 찾을 학교명·학년도. 명부와 정확히 일치하도록 지정하고 새 학년도 운영 시 갱신 |
 | Edge secrets | AI_PROVIDER, AI_MODEL, AI_API_KEY | 공급자 openai, 계정에서 사용 가능한 이미지·구조화 출력 모델, 서버 API 키 |
 | Edge secrets | WORKER_SECRET, CODE_PEPPER | 별도로 생성한 긴 무작위 값. 워커 인증 및 학생 코드 해시용 |
 | Supabase 런타임 | SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY | 서버에서만 사용하는 프로젝트 설정 |
