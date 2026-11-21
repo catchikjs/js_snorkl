@@ -28,7 +28,7 @@ begin
     end if;
 
     insert into math_private.members (class_id, uid, role, label)
-    values (target_class_id, teacher_uid, 'teacher', '경복비즈니스고등학교 구정숙')
+    values (target_class_id, teacher_uid, 'teacher', '구정숙 선생님')
     on conflict (class_id, uid) do update set label = excluded.label;
   end loop;
 end $$;
