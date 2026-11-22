@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BookOpen,
@@ -42,6 +42,7 @@ import { Notebook } from "./Notebook";
 import { Bulk } from "./Bulk";
 import { Progress } from "./Progress";
 import { StudentRoster } from "./StudentRoster";
+import { QrAccessNotice } from "./QrAccessNotice";
 import { Review, Released, exportCsv } from "./Review";
 import "./style.css";
 const date = (t) =>
@@ -263,6 +264,7 @@ function Login() {
   );
 }
 function ClassApp({ uid }) {
+  const navigationVersion = useRef(0);
   const [home, homeSet] = useState({ classes: [], tasks: [] }),
     [page, nav] = useState("할 일"),
     [taskId, taskSel] = useState(""),
@@ -275,6 +277,7 @@ function ClassApp({ uid }) {
     [selectedClass, chooseClass] = useState(""),
     [note, say] = useState(""),
     [loaded, ready] = useState(false),
+    [qrAccessError, setQrAccessError] = useState<any>(null),
     [drawer, menu] = useState(false),
     [records, recordsSet] = useState<any[]>([]),
     [summary, sum] = useState<any>({}),
@@ -313,10 +316,11 @@ function ClassApp({ uid }) {
     ready(true);
   };
   async function summaryLoad() {
+    const version = navigationVersion.current;
     const all = await Promise.all(
       tasks.map(async (t) => [t.id, await api("summary", { task: t.id })]),
     );
-    sum(Object.fromEntries(all));
+    if (version === navigationVersion.current) sum(Object.fromEntries(all));
   }
   useEffect(() => {
     refresh().catch((e) => {
@@ -339,21 +343,29 @@ function ClassApp({ uid }) {
   }, [taskKey]);
   useEffect(() => {
     if (!loaded) return;
-    const m = location.pathname.match(/^\/a\/([a-f\d-]{36})\/?$/i);
+    const m = location.pathname.match(/^\/a\/([^/]+)\/?$/i);
     if (!m) return;
+    let live = true;
+    const path = location.pathname;
     api("resolve", { token: m[1] })
       .then(async (id) => {
+        if (!live || location.pathname !== path) return;
         const t = home.tasks.find((t) => t.id === id);
         if (t) chooseClass(t.class_id);
         const d = await openTask(id);
+        if (!d) return;
         if (!teacher) {
           if (d.subs.length) inspect(d.subs[0].id);
           else if (d.questions.length) solve(d.questions[0].id);
         }
       })
-      .catch(() => say("이 링크는 중지되었거나 배정 대상이 아닙니다."));
+      .catch((error) => {
+        if (live && location.pathname === path) setQrAccessError(error);
+      });
+    return () => { live = false; };
   }, [loaded]);
   function go(p) {
+    navigationVersion.current++;
     nav(p);
     menu(false);
     edit("");
@@ -365,7 +377,9 @@ function ClassApp({ uid }) {
     if (location.pathname !== "/") history.replaceState(null, "", "/");
   }
   async function openTask(id) {
+    const version = ++navigationVersion.current;
     const d = await api("detail", { task: id });
+    if (version !== navigationVersion.current) return null;
     say("");
     taskSel(id);
     details(d);
@@ -379,7 +393,9 @@ function ClassApp({ uid }) {
   }
   async function reloadDetail() {
     if (taskId) {
+      const version = navigationVersion.current;
       const d = await api("detail", { task: taskId });
+      if (version !== navigationVersion.current) return;
       details(d);
       sum((s) => ({ ...s, [taskId]: d }));
     }
@@ -645,7 +661,9 @@ function ClassApp({ uid }) {
             value={cl?.id || ""}
             onChange={(e) => {
               chooseClass(e.target.value);
-              go(teacher ? (page === "학생 관리" ? "학생 관리" : "내 평가") : "할 일");
+              go(teacher
+                ? active === "제출·검토" ? "제출·검토" : page === "학생 관리" ? "학생 관리" : "내 평가"
+                : "할 일");
             }}
           >
             {classes.map((c) => (
@@ -656,6 +674,7 @@ function ClassApp({ uid }) {
           </select>
         </header>
         <div className="content">
+          {qrAccessError && <QrAccessNotice error={qrAccessError} onClose={() => { setQrAccessError(null); go("할 일"); }} />}
           {teacher && cl && page === "학생 관리" && <StudentRoster key={cl.id} classroom={cl} classes={classes} />}
           {note && (
             <p className="notice" role="alert">
@@ -672,7 +691,9 @@ function ClassApp({ uid }) {
                   <h1>{active === "할 일" ? "나의 학습 보드" : active}</h1>
                   <p>
                     {teacher
-                      ? "학급별 평가와 제출 기록을 관리하세요."
+                      ? active === "제출·검토"
+                        ? `${cl?.name || "선택한 학급"}에 배포된 평가와 학생별 제출 기록을 확인하세요.`
+                        : "학급별 평가와 제출 기록을 관리하세요."
                       : "배정된 과제를 확인하고 나만의 풀이를 기록하세요."}
                   </p>
                 </div>
@@ -830,6 +851,7 @@ function ClassApp({ uid }) {
               <div className="pagehead">
                 <div>
                   <small>
+                    {teacher && `${classes.find((c) => c.id === task.class_id)?.name || ""} · `}
                     {task.subject} · {task.kind}
                   </small>
                   <h1>{task.title}</h1>

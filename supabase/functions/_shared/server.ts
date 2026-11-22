@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { BookValidationError } from "./contract.js";
 import { EnrollmentError } from "./enrollment.js";
+import { DistributionAccessError } from "./distribution-access.js";
 export const env = (k: string) => {
   const v = Deno.env.get(k);
   if (!v) throw Error("configuration");
@@ -32,6 +33,11 @@ export function endpoint(fn: (req: Request) => Promise<unknown>) {
         headers,
       });
     } catch (error) {
+      if (error instanceof DistributionAccessError)
+        return new Response(JSON.stringify({ error: error.message, code: error.code }), {
+          status: error.status,
+          headers,
+        });
       return new Response(
         JSON.stringify({
           error: error instanceof BookValidationError || error instanceof EnrollmentError ? error.message :

@@ -1,6 +1,7 @@
 import { mockJob } from "./mock-worker.js";
 import { database, rpc, student, teacher } from "./database.js";
 import { dispatch } from "../supabase/functions/_shared/gateway.js";
+import { DistributionAccessError } from "../supabase/functions/_shared/distribution-access.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -131,6 +132,11 @@ export function classroomDemo(configuredPassword) {
             ),
           );
         } catch (e) {
+          if (e instanceof DistributionAccessError) {
+            res.writeHead(e.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+            res.end(JSON.stringify({ error: e.message, code: e.code }));
+            return;
+          }
           console.warn("[local-classroom]", operation, e.code || e.name, e.message);
           send(null, 400);
         }

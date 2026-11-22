@@ -6,8 +6,9 @@ import {
   content,
 } from "./contract.js";
 import { originalPath } from "./storage-path.js";
+import { resolveDistribution } from "./distribution-access.js";
 const library = new Set(
-  "library book new copy saveBook generate approve distribute resolve rotate toggle refreshRoster extra limit".split(
+  "library book new copy saveBook generate approve distribute rotate toggle refreshRoster extra limit".split(
     " ",
   ),
 );
@@ -17,6 +18,7 @@ const classroom = new Set(
   ),
 );
 export async function dispatch(op, p, command, read) {
+  if (op === "resolve") return resolveDistribution(p, command);
   if (["cancelDistribution", "resumeDistribution"].includes(op))
     return command("math_distribution", op, p);
   if (op === "deleteBook")

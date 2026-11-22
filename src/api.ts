@@ -19,6 +19,10 @@ async function local(op, p) {
     body: JSON.stringify({ op, p, persona: persona() }),
   });
   if (!r.ok) {
+    let detail;
+    try { detail = await r.json(); } catch { /* No JSON error body. */ }
+    if (typeof detail?.error === "string")
+      throw Object.assign(Error(detail.error), { code: detail.code });
     if (op === "teacher-login" && r.status === 401)
       throw Error("비밀번호가 일치하지 않습니다. .env.local의 교사 모드 비밀번호를 확인하세요.");
     if (r.status === 403)
@@ -39,7 +43,7 @@ export async function api(op: string, p: any = {}): Promise<any> {
   if (error) {
     let detail;
     try { detail = await error.context?.json(); } catch { /* No JSON error body. */ }
-    throw Error(typeof detail?.error === "string" ? detail.error : "요청을 완료하지 못했습니다. 연결과 입력 내용을 확인하세요.");
+    throw Object.assign(Error(typeof detail?.error === "string" ? detail.error : "요청을 완료하지 못했습니다. 연결과 입력 내용을 확인하세요."), { code: detail?.code });
   }
   return data.value;
 }
