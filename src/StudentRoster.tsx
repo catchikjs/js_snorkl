@@ -1,6 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, Download, Upload } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Download,
+  Upload,
+  KeyRound,
+  RefreshCw,
+} from "lucide-react";
 import { api, client, demo, message } from "./api";
+import { StudentPasswordReset } from "./StudentPasswordReset";
+import { NoticeToast, useNotice } from "./NoticeToast";
 import {
   mergeRosterRows,
   parseRosterFile,
@@ -11,7 +20,6 @@ import {
   matchesRosterClass,
   routeRosterRows,
 } from "./roster-import.js";
-import "./roster.css";
 
 const blank = (class_name) => ({
   id: crypto.randomUUID(),
@@ -32,6 +40,14 @@ export function StudentRoster({ classroom, classes }) {
   const [allMembers, setMembers] = useState<any[]>([]);
   const [rosterReady, setRosterReady] = useState(false);
   const members = allMembers.filter((m) => m.class_id === classroom.id);
+  const [listClassId, selectListClass] = useState(classroom.id);
+  const listClass = destinations.find((c) => c.id === listClassId) || classroom;
+  const listedMembers = allMembers
+    .filter((m) => m.class_id === listClass.id)
+    .sort((a, b) => a.number.localeCompare(b.number, "ko", { numeric: true }));
+  const [resetTarget, setResetTarget] = useState<any>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const { notice, notify, dismiss } = useNotice();
   const [paste, setPaste] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -478,43 +494,131 @@ export function StudentRoster({ classroom, classes }) {
           {note}
         </p>
       </section>
-      <section className="panel">
-        <h2>등록된 학생 {members.length}명</h2>
-        <p>
-          {destinations
-            .map(
-              (c) =>
-                `${c.name} ${allMembers.filter((m) => m.class_id === c.id).length}명`,
-            )
-            .join(" · ")}
-        </p>
+      <section
+        className="panel registered-students"
+        aria-labelledby="registered-students-title"
+      >
+        <header className="roster-list-header">
+          <div>
+            <h2 id="registered-students-title">
+              등록된 학생{" "}
+              {rosterReady ? `${listedMembers.length}명` : "조회 중"}
+            </h2>
+            <p>
+              {listClass.name} · 학급을 선택하면 해당 반의 명단이 표시됩니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={refreshing || busy}
+            onClick={async () => {
+              setRefreshing(true);
+              try {
+                await load();
+              } catch (error) {
+                if (live.current) notify(message(error));
+              } finally {
+                if (live.current) setRefreshing(false);
+              }
+            }}
+          >
+            <RefreshCw size={16} aria-hidden="true" />
+            {refreshing ? "조회 중…" : "명부 새로고침"}
+          </button>
+        </header>
+        <div
+          className="roster-class-filters"
+          role="group"
+          aria-label="등록 학생 학급 선택"
+        >
+          {destinations.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              aria-pressed={c.id === listClass.id}
+              onClick={() => {
+                selectListClass(c.id);
+                setResetTarget(null);
+                dismiss();
+              }}
+            >
+              {c.name}
+              <span>
+                {rosterReady
+                  ? `${allMembers.filter((m) => m.class_id === c.id).length}명`
+                  : "조회 중"}
+              </span>
+            </button>
+          ))}
+        </div>
         <p>
           기존 학생의 학번·이름을 명부에 넣고 등록·배정하면, 누락된 평가 배정도
           함께 처리합니다.
         </p>
-        {members.length ? (
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">학번</th>
-                <th scope="col">이름</th>
-                <th scope="col">학급</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => (
-                <tr key={member.uid}>
-                  <td>{member.number}</td>
-                  <td>{member.label}</td>
-                  <td>{classroom.name}</td>
+        {!rosterReady ? (
+          <p role="status">등록된 학생을 불러오는 중입니다.</p>
+        ) : listedMembers.length ? (
+          <div className="roster-table-scroll">
+            <table>
+              <caption className="sr-only">
+                {listClass.name} 등록 학생 명단
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">학번</th>
+                  <th scope="col">이름</th>
+                  <th scope="col">학급</th>
+                  <th scope="col">계정 관리</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {listedMembers.map((member) => (
+                  <tr key={member.uid}>
+                    <td>{member.number}</td>
+                    <td>{member.label}</td>
+                    <td>{listClass.name}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="roster-reset-button"
+                        aria-label={`${member.number} ${member.label} 비밀번호 초기화`}
+                        onClick={() => {
+                          dismiss();
+                          setResetTarget(member);
+                        }}
+                      >
+                        <KeyRound size={16} aria-hidden="true" />
+                        비밀번호 초기화
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <p>등록된 학생이 없습니다.</p>
+          <p className="roster-list-empty">
+            {listClass.name}에 등록된 학생이 없습니다.
+          </p>
         )}
       </section>
+      <NoticeToast notice={notice} onDismiss={dismiss} />
+      {resetTarget && (
+        <StudentPasswordReset
+          key={resetTarget.uid}
+          student={resetTarget}
+          classroom={listClass}
+          onClose={() => setResetTarget(null)}
+          onComplete={() => {
+            notify(
+              `${resetTarget.number} ${resetTarget.label} 학생에게 새 비밀번호를 개별 전달하세요.`,
+              "success",
+              "비밀번호를 초기화했습니다",
+            );
+            setResetTarget(null);
+          }}
+        />
+      )}
     </section>
   );
 }

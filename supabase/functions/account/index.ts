@@ -1,5 +1,6 @@
 import { admin, endpoint, env } from "../_shared/server.ts";
 import { hash } from "../_shared/contract.js";
+import { resetStudentPassword } from "../_shared/password-reset.js";
 import {
   enrollStudent,
   enrollRosterStudent,
@@ -18,13 +19,14 @@ function studentSchool() {
 endpoint(async (req) => {
   const db = admin();
   const input = await req.json();
-  if (["enroll", "enrollRoster", "enrollClassRoster"].includes(input.op)) {
+  if (["enroll", "enrollRoster", "enrollClassRoster", "resetStudentPassword"].includes(input.op)) {
     const { data, error } = await db.auth.getUser(
       (req.headers.get("authorization") || "").replace(/^Bearer /i, ""),
     );
     if (error || !data.user)
       throw new EnrollmentError("교사 계정으로 로그인하세요.");
     const enroll =
+      input.op === "resetStudentPassword" ? resetStudentPassword :
       input.op === "enrollClassRoster" ? enrollClassRosterStudent :
       input.op === "enrollRoster" ? enrollRosterStudent : enrollStudent;
     return await enroll(

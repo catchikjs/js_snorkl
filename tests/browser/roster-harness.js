@@ -2,6 +2,8 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { StudentRoster } from "../../src/StudentRoster";
 import "../../src/style.css";
+import "../../src/roster.css";
+import "../../src/notice-toast.css";
 
 const classes = Array.from({ length: 7 }, (_, i) => ({
   id: "20000000-0000-4000-8000-" + String(i + 1).padStart(12, "0"),

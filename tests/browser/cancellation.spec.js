@@ -84,7 +84,7 @@ for (const screen of ["draft", "submitted"]) {
       await expect(
         page.getByRole("heading", { name: "나의 학습 보드" }),
       ).toBeVisible();
-      await expect(page.getByRole("alert")).toContainText(
+      await expect(page.locator(".notice-toast-region").getByRole("status")).toContainText(
         "배포가 취소되었거나",
       );
       await expect(

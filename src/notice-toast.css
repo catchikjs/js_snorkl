@@ -1,0 +1,108 @@
+.notice-toast-region {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  width: min(420px, calc(100vw - 32px));
+  z-index: 120;
+  pointer-events: none;
+}
+.notice-toast {
+  --notice-accent: #18744d;
+  --notice-tint: #edf7f1;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 12px 18px 18px;
+  border: 1px solid #e0e7e3;
+  border-radius: 16px;
+  background: white;
+  box-shadow:
+    0 12px 40px #20294014,
+    0 2px 8px #20294008;
+  pointer-events: auto;
+  animation: notice-toast-enter 180ms ease-out both;
+}
+.notice-toast--info {
+  --notice-accent: #3755da;
+  --notice-tint: #eef2ff;
+  border-color: var(--line);
+}
+.notice-toast--error {
+  --notice-accent: #b44436;
+  --notice-tint: #fff1ee;
+  border-color: #eedbd7;
+}
+.notice-toast-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--notice-tint);
+  color: var(--notice-accent);
+}
+.notice-toast-copy {
+  flex: 1;
+  min-width: 0;
+  padding-top: 1px;
+  overflow-wrap: anywhere;
+}
+.notice-toast-copy strong {
+  display: block;
+  color: var(--navy);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.notice-toast-copy p {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.notice-toast-close {
+  flex: 0 0 44px;
+  width: 44px;
+  min-height: 44px;
+  margin-top: -5px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #737e91;
+}
+.notice-toast-close:hover {
+  background: #f2f4f8;
+  color: var(--navy);
+}
+.notice-toast--closing {
+  animation: notice-toast-exit 180ms ease-in both;
+}
+@keyframes notice-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes notice-toast-exit {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (max-width: 600px) {
+  .notice-toast-region {
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice-toast,
+  .notice-toast--closing {
+    animation-duration: 0.01ms;
+  }
+}

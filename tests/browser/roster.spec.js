@@ -97,13 +97,11 @@ test("whole-grade upload routes all 137 rows to their classes and validates edit
         ),
       )
       .join("\n");
-  await page
-    .getByLabel("학생 명부 파일")
-    .setInputFiles({
-      name: "전체학년.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from(csv),
-    });
+  await page.getByLabel("학생 명부 파일").setInputFiles({
+    name: "전체학년.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(csv),
+  });
   await expect(
     page.getByText(/학급별 처리 예정: 1학년 1반 18명/),
   ).toBeVisible();
@@ -138,13 +136,11 @@ test("a misplaced existing student previews the move and preserves the password"
   page,
 }) => {
   const requests = await openRoster(page, true);
-  await page
-    .getByLabel("학생 명부 파일")
-    .setInputFiles({
-      name: "수정.csv",
-      mimeType: "text/csv",
-      buffer: Buffer.from("10201,기존 학생,1학년 2반,\n"),
-    });
+  await page.getByLabel("학생 명부 파일").setInputFiles({
+    name: "수정.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("10201,기존 학생,1학년 2반,\n"),
+  });
   await expect(
     page.getByText(/소속 수정 예정: 1학년 1반 → 1학년 2반/),
   ).toBeVisible();
@@ -259,4 +255,149 @@ test("CSV errors keep the preview intact and the downloadable Excel template is 
   ).toBeVisible();
   await expect(page.getByLabel("1행 이름")).toHaveValue("김,학생");
   expect(requests).toHaveLength(0);
+});
+
+test("class buttons filter registered students without discarding input and reset only the selected student's password", async ({
+  page,
+}) => {
+  await openRoster(page);
+  const students = [
+    {
+      uid: "30000000-0000-4000-8000-000000000001",
+      number: "10101",
+      label: "첫 반 학생",
+      class_id: classId(1),
+    },
+    {
+      uid: "30000000-0000-4000-8000-000000000026",
+      number: "10201",
+      label: "둘째 반 학생",
+      class_id: classId(2),
+    },
+    {
+      uid: "30000000-0000-4000-8000-000000000027",
+      number: "10202",
+      label: "다른 학생",
+      class_id: classId(2),
+    },
+  ];
+  await page.route("**/__roster_members?*", (route) =>
+    route.fulfill({
+      json: students.filter(
+        (m) =>
+          m.class_id ===
+          new URL(route.request().url()).searchParams.get("class_id"),
+      ),
+    }),
+  );
+  const resets = [];
+  let fail = true;
+  await page.route("**/__roster_account", (route) => {
+    resets.push(route.request().postDataJSON());
+    return fail
+      ? route.fulfill({
+          status: 503,
+          json: { error: "연결을 확인하고 같은 비밀번호로 다시 시도하세요." },
+        })
+      : route.fulfill({
+          json: { value: { reset: true, uid: students[1].uid } },
+        });
+  });
+  await page.reload();
+  const list = page.getByRole("region", { name: "등록된 학생 1명" });
+  await expect(
+    list.getByRole("cell", { name: "첫 반 학생", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("1행 이름", { exact: true }).fill("입력 중인 명부");
+  const filters = page.getByRole("group", { name: "등록 학생 학급 선택" });
+  await filters
+    .getByRole("button", { name: "1학년 2반 2명", exact: true })
+    .click();
+  const second = page.getByRole("region", { name: "등록된 학생 2명" });
+  await expect(
+    second.getByRole("cell", { name: "둘째 반 학생", exact: true }),
+  ).toBeVisible();
+  await expect(
+    second.getByRole("cell", { name: "첫 반 학생", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("1행 이름", { exact: true })).toHaveValue(
+    "입력 중인 명부",
+  );
+  await filters
+    .getByRole("button", { name: "1학년 3반 0명", exact: true })
+    .click();
+  await expect(
+    page.getByText("1학년 3반에 등록된 학생이 없습니다.", { exact: true }),
+  ).toBeVisible();
+  await filters
+    .getByRole("button", { name: "1학년 2반 2명", exact: true })
+    .click();
+  await second.scrollIntoViewIfNeeded();
+  await second.screenshot({ path: "/private/tmp/goodmath-roster-classes.png" });
+  const open = second.getByRole("button", {
+    name: "10201 둘째 반 학생 비밀번호 초기화",
+    exact: true,
+  });
+  await open.click();
+  const dialog = page.getByRole("dialog", { name: "학생 비밀번호 초기화" });
+  await expect(dialog).toContainText("10201 · 둘째 반 학생");
+  await expect(dialog).toContainText("1학년 2반");
+  await dialog
+    .getByLabel("새 비밀번호", { exact: true })
+    .fill("student-new-password");
+  await dialog
+    .getByLabel("새 비밀번호 확인", { exact: true })
+    .fill("different-password");
+  await dialog
+    .getByRole("button", { name: "비밀번호 초기화", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText("서로 다릅니다");
+  expect(resets).toHaveLength(0);
+  await dialog
+    .getByLabel("새 비밀번호 확인", { exact: true })
+    .fill("student-new-password");
+  await dialog
+    .getByRole("button", { name: "비밀번호 초기화", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText("연결을 확인");
+  expect(resets).toHaveLength(1);
+  fail = false;
+  await dialog
+    .getByRole("button", { name: "비밀번호 초기화", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".notice-toast")).toContainText(
+    "비밀번호를 초기화했습니다",
+  );
+  expect(resets).toHaveLength(2);
+  expect(resets[1]).toEqual({
+    op: "resetStudentPassword",
+    class_id: classId(2),
+    uid: students[1].uid,
+    password: "student-new-password",
+  });
+  expect(
+    await page.evaluate(() =>
+      JSON.stringify({ ...localStorage, ...sessionStorage }),
+    ),
+  ).not.toContain("student-new-password");
+  await open.click();
+  await expect(dialog.getByLabel("새 비밀번호", { exact: true })).toHaveValue(
+    "",
+  );
+  await expect(
+    dialog.getByLabel("새 비밀번호 확인", { exact: true }),
+  ).toHaveValue("");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await dialog.screenshot({
+    path: "/private/tmp/goodmath-student-password.png",
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  expect(resets).toHaveLength(2);
 });

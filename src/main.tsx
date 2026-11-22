@@ -44,9 +44,12 @@ import { Progress } from "./Progress";
 import { StudentRoster } from "./StudentRoster";
 import { QrAccessNotice } from "./QrAccessNotice";
 import { LiveNotes } from "./LiveNotes";
+import { NoticeToast, useNotice } from "./NoticeToast";
 import { Review, Released, exportCsv } from "./Review";
 import "./style.css";
 import "./live-notes.css";
+import "./notice-toast.css";
+import "./roster.css";
 const date = (t) =>
   new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric" }).format(
     new Date(t),
@@ -267,6 +270,7 @@ function Login() {
 }
 function ClassApp({ uid }) {
   const navigationVersion = useRef(0);
+  const { notice, notify: say, dismiss: dismissNotice } = useNotice();
   const [home, homeSet] = useState({ classes: [], tasks: [] }),
     [page, nav] = useState("할 일"),
     [taskId, taskSel] = useState(""),
@@ -277,7 +281,6 @@ function ClassApp({ uid }) {
     [qId, solve] = useState(""),
     [filter, filterBy] = useState("전체"),
     [selectedClass, chooseClass] = useState(""),
-    [note, say] = useState(""),
     [loaded, ready] = useState(false),
     [qrAccessError, setQrAccessError] = useState<any>(null),
     [liveNotesOpen, showLiveNotes] = useState(false),
@@ -338,7 +341,7 @@ function ClassApp({ uid }) {
       !home.tasks.some((t) => t.id === taskId)
     ) {
       go("할 일");
-      say("이 평가의 배포가 취소되었거나 배정이 변경되었습니다. 저장된 풀이는 보관됩니다.");
+      say("이 평가의 배포가 취소되었거나 배정이 변경되었습니다. 저장된 풀이는 보관됩니다.", "info", "평가 배정이 변경되었습니다");
     }
   }, [loaded, teacher, taskId, taskKey]);
   useEffect(() => {
@@ -681,11 +684,7 @@ function ClassApp({ uid }) {
         <div className="content">
           {qrAccessError && <QrAccessNotice error={qrAccessError} onClose={() => { setQrAccessError(null); go("할 일"); }} />}
           {teacher && cl && page === "학생 관리" && <StudentRoster key={cl.id} classroom={cl} classes={classes} />}
-          {note && (
-            <p className="notice" role="alert">
-              {note}
-            </p>
-          )}
+          <NoticeToast notice={notice} onDismiss={dismissNotice} />
           {homeScreen && (
             <>
               <div className="pagehead">
@@ -799,7 +798,7 @@ function ClassApp({ uid }) {
                                 edit("");
                                 nav("내 평가");
                               }
-                              say("평가를 목록에서 삭제했습니다.");
+                              say("배포된 과제와 학생 제출 기록은 그대로 보관됩니다.", "success", "평가를 목록에서 삭제했습니다");
                             })
                           }
                         >
@@ -980,7 +979,7 @@ function ClassApp({ uid }) {
                                   attempts,
                                 });
                                 await refresh();
-                                say("제출 횟수를 변경했습니다.");
+                                say("제출 횟수를 변경했습니다.", "success", "변경 완료");
                               });
                           }}
                         />
@@ -1073,7 +1072,7 @@ function ClassApp({ uid }) {
                                   uid: m.uid,
                                 });
                                 await reloadDetail();
-                                say("추가 응시 1회를 허용했습니다.");
+                                say("추가 응시 1회를 허용했습니다.", "success", "추가 제출 허용");
                               })
                             }
                           >
@@ -1184,7 +1183,7 @@ function ClassApp({ uid }) {
                                   text: reflection,
                                 });
                                 reflect("");
-                                say("성찰을 저장했습니다.");
+                                say("성찰을 저장했습니다.", "success", "저장 완료");
                               })
                             }
                           >
