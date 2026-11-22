@@ -43,6 +43,7 @@ import { Bulk } from "./Bulk";
 import { Progress } from "./Progress";
 import { StudentRoster } from "./StudentRoster";
 import { QrAccessNotice } from "./QrAccessNotice";
+import { LiveNotes } from "./LiveNotes";
 import { Review, Released, exportCsv } from "./Review";
 import "./style.css";
 const date = (t) =>
@@ -278,6 +279,7 @@ function ClassApp({ uid }) {
     [note, say] = useState(""),
     [loaded, ready] = useState(false),
     [qrAccessError, setQrAccessError] = useState<any>(null),
+    [liveNotesOpen, showLiveNotes] = useState(false),
     [drawer, menu] = useState(false),
     [records, recordsSet] = useState<any[]>([]),
     [summary, sum] = useState<any>({}),
@@ -366,6 +368,7 @@ function ClassApp({ uid }) {
   }, [loaded]);
   function go(p) {
     navigationVersion.current++;
+    showLiveNotes(false);
     nav(p);
     menu(false);
     edit("");
@@ -380,6 +383,7 @@ function ClassApp({ uid }) {
     const version = ++navigationVersion.current;
     const d = await api("detail", { task: id });
     if (version !== navigationVersion.current) return null;
+    showLiveNotes(false);
     say("");
     taskSel(id);
     details(d);
@@ -873,6 +877,11 @@ function ClassApp({ uid }) {
                 />
               ) : teacher ? (
                 <>
+                  <div className="tabs" role="group" aria-label="평가 확인 화면">
+                    <button type="button" aria-pressed={!liveNotesOpen} className={!liveNotesOpen ? "selected" : ""} onClick={() => showLiveNotes(false)}>제출·검토</button>
+                    <button type="button" aria-pressed={liveNotesOpen} className={liveNotesOpen ? "selected" : ""} onClick={() => showLiveNotes(true)}>실시간 노트</button>
+                  </div>
+                  {liveNotesOpen ? <LiveNotes key={task.id} task={task} classroom={classes.find((c) => c.id === task.class_id)} questions={detail.questions} openSubmission={(id) => { showLiveNotes(false); inspect(id); }} /> : <>
                   <div className="stats">
                     {[
                       ["배정", detail.members.length],
@@ -1074,6 +1083,7 @@ function ClassApp({ uid }) {
                     })}
                   </section>
                   <Progress task={task} detail={detail} open={inspect} />
+                  </>}
                 </>
               ) : (
                 <section className="panel">

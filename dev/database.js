@@ -56,6 +56,9 @@ export async function database(dir, { omitMigrations = [] } = {}) {
     await db.exec(
       await readFile("supabase/migrations/202611220006_class_roster_import.sql", "utf8"),
     );
+    await db.exec(
+      await readFile("supabase/migrations/202611220007_live_notes.sql", "utf8"),
+    );
     return db;
   }
   await db.transaction(async (db) => {
