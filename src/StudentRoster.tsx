@@ -1,7 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Download, Upload } from "lucide-react";
 import { api, client, demo, message } from "./api";
-import { parseRosterPaste } from "./roster-import.js";
+import {
+  mergeRosterRows,
+  parseRosterFile,
+  parseRosterText,
+  parseRosterRows,
+  rosterTemplate,
+  rosterLimit,
+} from "./roster-import.js";
 import "./roster.css";
 
 const blank = () => ({
@@ -19,8 +26,11 @@ export function StudentRoster({ classroom }) {
   const [paste, setPaste] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [filename, setFilename] = useState("");
   const locked = useRef(false);
   const live = useRef(true);
+  const fileInput = useRef<HTMLInputElement>(null);
   const load = async () => {
     const data = await api("roster", { class_id: classroom.id });
     if (live.current) setMembers(data);
@@ -32,6 +42,8 @@ export function StudentRoster({ classroom }) {
       live.current = false;
     };
   }, [classroom.id]);
+  const existing = (row) => members.find((m) => m.number === row.number.trim());
+  const pendingCount = rows.filter((row) => !row.done).length;
   const update = (id, field, value) =>
     setRows((list) =>
       list.map((row) =>
@@ -41,13 +53,67 @@ export function StudentRoster({ classroom }) {
       ),
     );
 
+  function importRows(imported) {
+    setRows(mergeRosterRows(rows, imported));
+    setNote(
+      `${imported.length}명을 불러왔습니다. ${classroom.name}에 등록·배정할 명부를 확인한 뒤 아래 버튼을 누르세요.`,
+    );
+  }
+  async function readFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || locked.current) return;
+    locked.current = true;
+    setReading(true);
+    setNote("");
+    try {
+      const imported = await parseRosterFile(file);
+      if (!live.current) return;
+      importRows(imported);
+      setFilename(file.name);
+    } catch (error) {
+      if (live.current) setNote(message(error));
+    } finally {
+      locked.current = false;
+      if (live.current) setReading(false);
+    }
+  }
+  async function downloadTemplate() {
+    setReading(true);
+    try {
+      const bytes = await rosterTemplate();
+      if (!live.current) return;
+      const url = URL.createObjectURL(
+        new Blob([bytes], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "학생_명부_양식.xlsx";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      if (live.current)
+        setNote("양식을 내려받지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      if (live.current) setReading(false);
+    }
+  }
   async function register(e) {
     e.preventDefault();
-    if (locked.current) return;
+    if (locked.current || demo) return;
     const pending = rows.filter((row) => !row.done);
-    const numbers = pending.map((row) => row.number.trim());
-    if (new Set(numbers).size !== numbers.length) {
-      setNote("입력한 명부에 같은 학번이 중복되어 있습니다.");
+    try {
+      parseRosterRows(
+        pending.map((row) => [row.number, row.label, row.password]),
+      );
+      if (pending.some((row) => !existing(row) && !row.password))
+        throw Error(
+          "신규 학생의 초기 비밀번호를 입력하세요. 기존 학생은 비밀번호를 비워 둘 수 있습니다.",
+        );
+    } catch (error) {
+      setNote(message(error));
       return;
     }
     locked.current = true;
@@ -59,20 +125,20 @@ export function StudentRoster({ classroom }) {
         if (!live.current) break;
         setRows((list) =>
           list.map((item) =>
-            item.id === row.id ? { ...item, status: "등록 중…" } : item,
+            item.id === row.id ? { ...item, status: "등록·배정 중…" } : item,
           ),
         );
         try {
           if (!client)
-            throw Error("학생 계정 등록은 연결된 학교에서 사용할 수 있습니다.");
+            throw Error("학생 등록·배정은 연결된 학교에서 사용할 수 있습니다.");
           const { data, error } = await client.functions.invoke("account", {
             body: {
-              op: "enroll",
+              op: "enrollRoster",
               class_id: classroom.id,
               id: row.id,
               number: row.number.trim(),
               label: row.label.trim(),
-              password: row.password,
+              password: existing(row) ? "" : row.password,
             },
           });
           if (error) {
@@ -84,11 +150,16 @@ export function StudentRoster({ classroom }) {
             }
             throw Error(
               detail?.error ||
-                "연결을 확인한 뒤 같은 행에서 다시 등록해 주세요.",
+                "연결을 확인한 뒤 같은 행에서 다시 등록·배정해 주세요.",
             );
           }
-          if (!data?.value?.registered)
-            throw Error("등록 결과를 확인하지 못했습니다.");
+          if (
+            !data?.value?.registered ||
+            !Number.isInteger(data.value.assigned_tasks)
+          )
+            throw Error(
+              "등록·배정 결과를 확인하지 못했습니다. 같은 행에서 다시 시도하세요.",
+            );
           success++;
           if (live.current)
             setRows((list) =>
@@ -98,9 +169,7 @@ export function StudentRoster({ classroom }) {
                       ...item,
                       done: true,
                       password: "",
-                      status: data.value.already_registered
-                        ? "등록 완료 확인 · 기존 비밀번호 유지"
-                        : "등록 완료",
+                      status: `${data.value.already_registered ? "기존 학생 · 비밀번호 유지" : "신규 등록 완료"} · ${data.value.assigned_tasks ? `평가 ${data.value.assigned_tasks}개 배정 완료` : "배정할 활성 평가 없음"}`,
                     }
                   : item,
               ),
@@ -117,16 +186,18 @@ export function StudentRoster({ classroom }) {
       if (live.current) {
         setNote(
           success === pending.length
-            ? `${success}명 등록 완료. 학생에게 학번과 초기 비밀번호를 개별 전달하세요.`
-            : `${pending.length}명 중 ${success}명 등록 완료. 등록되지 않은 행은 안내를 확인한 뒤 다시 등록하세요.`,
+            ? `${success}명 등록·배정 처리가 완료됐습니다. 신규 학생에게 학번과 초기 비밀번호를 개별 전달하세요.`
+            : `${pending.length}명 중 ${success}명 처리 완료. 실패한 행을 확인한 뒤 다시 등록·배정하세요.`,
         );
-        await load();
+        try {
+          await load();
+        } catch {
+          if (live.current)
+            setNote(
+              "처리 결과는 각 행에서 확인하세요. 등록된 명부를 다시 불러오려면 학생 관리 메뉴를 다시 여세요.",
+            );
+        }
       }
-    } catch (error) {
-      if (live.current)
-        setNote(
-          "등록 후 명부 새로고침에 실패했습니다. 학생 관리 메뉴를 다시 열어 확인하세요.",
-        );
     } finally {
       locked.current = false;
       if (live.current) setBusy(false);
@@ -137,156 +208,182 @@ export function StudentRoster({ classroom }) {
       <div className="pagehead">
         <div>
           <h1>학생 관리</h1>
-          <p>{classroom.name} · 학번, 이름, 초기 비밀번호를 등록하세요.</p>
+          <p>{classroom.name} · 학생 명부를 불러와 한 번에 등록·배정하세요.</p>
         </div>
       </div>
       <section className="panel">
-        <h2>학생 계정 등록</h2>
+        <h2>학생 일괄 등록·배정</h2>
         <p>
-          비밀번호는 6자 이상입니다. 등록 후 학생은 ‘학생’ 탭에서 학번과 초기
-          비밀번호로 바로 로그인할 수 있습니다.
+          <strong>배정할 학급: {classroom.name}</strong>
         </p>
         <p>
-          학번은 다른 반과도 중복되지 않게 입력하세요. 초기 비밀번호는 학생에게
-          개별 전달하며, 등록 후에는 명부에서 다시 볼 수 없습니다.
+          등록한 학생을 이 학급에 내가 배포한 활성 평가에도 배정합니다. 기존
+          학생은 학번·이름을 확인하고 비밀번호를 유지합니다.
         </p>
-        {demo ? (
-          <p className="notice">
-            개발용 가상 교실에서는 계정을 만들지 않습니다. 학교 계정으로
-            로그인해 주세요.
+        <div className="roster-file">
+          <h3>명부 파일로 불러오기</h3>
+          <p>
+            첫 번째 시트에 학번 · 이름 · 초기 비밀번호 열을 입력하세요. 기존
+            학생은 비밀번호를 비워 두고, 신규 학생은 6~200자로 입력하세요.
           </p>
-        ) : (
-          <>
-            <details>
-              <summary>엑셀에서 여러 명 붙여넣기</summary>
-              <p>
-                학번 · 이름 · 초기 비밀번호 순서의 세 열을 복사하세요. 학번 열은
-                텍스트 형식으로 입력하면 앞자리 0이 유지됩니다.
-              </p>
-              <label>
-                복사한 명부
-                <textarea
-                  value={paste}
-                  autoComplete="off"
-                  spellCheck={false}
-                  disabled={busy}
-                  onChange={(e) => setPaste(e.target.value)}
-                  placeholder={"학번\t이름\t초기 비밀번호"}
-                />
-              </label>
-              <button
-                type="button"
-                disabled={busy || !paste.trim()}
-                onClick={() => {
-                  try {
-                    const imported = parseRosterPaste(paste);
-                    setRows((list) => [
-                      ...list.filter(
-                        (r) => r.done || r.number || r.label || r.password,
-                      ),
-                      ...imported.map((r) => ({ ...blank(), ...r })),
-                    ]);
-                    setPaste("");
-                    setNote(
-                      `${imported.length}명을 입력표에 추가했습니다. 학급과 내용을 확인한 뒤 등록하세요.`,
-                    );
-                  } catch (error) {
-                    setNote(message(error));
-                  }
-                }}
-              >
-                입력표에 추가
-              </button>
-            </details>
-            <form onSubmit={register} autoComplete="off">
-              <fieldset disabled={busy}>
-                <legend className="sr-only">등록할 학생</legend>
-                <div className="roster-inputs">
-                  {rows.map((row, index) => (
-                    <div className="roster-row" key={index}>
-                      <label>
-                        학번
-                        <input
-                          aria-label={`${index + 1}행 학번`}
-                          value={row.number}
-                          required
-                          maxLength={100}
-                          disabled={row.done}
-                          onChange={(e) =>
-                            update(row.id, "number", e.target.value)
-                          }
-                        />
-                      </label>
-                      <label>
-                        이름
-                        <input
-                          aria-label={`${index + 1}행 이름`}
-                          value={row.label}
-                          required
-                          maxLength={100}
-                          disabled={row.done}
-                          onChange={(e) =>
-                            update(row.id, "label", e.target.value)
-                          }
-                        />
-                      </label>
-                      <label>
-                        초기 비밀번호
-                        <input
-                          aria-label={`${index + 1}행 초기 비밀번호`}
-                          type="password"
-                          autoComplete="new-password"
-                          value={row.password}
-                          required={!row.done}
-                          minLength={6}
-                          maxLength={200}
-                          disabled={row.done}
-                          placeholder={row.done ? "등록 완료" : "6자 이상"}
-                          onChange={(e) =>
-                            update(row.id, "password", e.target.value)
-                          }
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        aria-label={`${index + 1}행 삭제`}
-                        onClick={() =>
-                          setRows((list) => list.filter((_, i) => i !== index))
-                        }
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                      {row.status && (
-                        <p className="roster-row-status" role="status">
-                          {row.status}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="roster-actions">
+          <p className="roster-help">
+            엑셀(.xlsx), CSV, TSV · 최대 200명 / 5MB · 학번은 텍스트 형식으로
+            입력하세요.
+          </p>
+          <div className="roster-actions">
+            <button
+              type="button"
+              disabled={busy || reading}
+              onClick={downloadTemplate}
+            >
+              <Download size={18} /> 엑셀 양식 다운로드
+            </button>
+            <button
+              type="button"
+              disabled={busy || reading}
+              onClick={() => fileInput.current?.click()}
+            >
+              <Upload size={18} />{" "}
+              {reading ? "파일 준비 중…" : "명부 파일 선택"}
+            </button>
+            <input
+              ref={fileInput}
+              className="sr-only"
+              type="file"
+              accept=".xlsx,.csv,.tsv"
+              aria-label="학생 명부 파일"
+              disabled={busy || reading}
+              onChange={readFile}
+            />
+          </div>
+          {filename && (
+            <p className="roster-filename">불러온 파일: {filename}</p>
+          )}
+        </div>
+        <details>
+          <summary>엑셀에서 여러 명 붙여넣기</summary>
+          <label>
+            복사한 명부
+            <textarea
+              value={paste}
+              autoComplete="off"
+              spellCheck={false}
+              disabled={busy || reading}
+              onChange={(e) => setPaste(e.target.value)}
+              placeholder={"학번\t이름\t초기 비밀번호"}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={busy || reading || !paste.trim()}
+            onClick={() => {
+              try {
+                importRows(parseRosterText(paste, "\t"));
+                setPaste("");
+              } catch (error) {
+                setNote(message(error));
+              }
+            }}
+          >
+            입력표에 추가
+          </button>
+        </details>
+        {demo && (
+          <p className="notice">
+            개발용 가상 교실에서는 명부 미리보기만 가능합니다. 실제 등록·배정은
+            학교 계정으로 로그인해 주세요.
+          </p>
+        )}
+        <form onSubmit={register} autoComplete="off">
+          <fieldset disabled={busy || reading}>
+            <legend className="sr-only">등록·배정할 학생</legend>
+            <h3>명부 확인 · 처리 대기 {pendingCount}명</h3>
+            <div className="roster-inputs">
+              {rows.map((row, index) => (
+                <div className="roster-row" key={index}>
+                  <label>
+                    학번
+                    <input
+                      aria-label={`${index + 1}행 학번`}
+                      value={row.number}
+                      required
+                      maxLength={100}
+                      disabled={row.done}
+                      onChange={(e) => update(row.id, "number", e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    이름
+                    <input
+                      aria-label={`${index + 1}행 이름`}
+                      value={row.label}
+                      required
+                      maxLength={100}
+                      disabled={row.done}
+                      onChange={(e) => update(row.id, "label", e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    초기 비밀번호
+                    <input
+                      aria-label={`${index + 1}행 초기 비밀번호`}
+                      type="password"
+                      autoComplete="new-password"
+                      value={row.password}
+                      required={!row.done && !existing(row)}
+                      minLength={6}
+                      maxLength={200}
+                      disabled={row.done || !!existing(row)}
+                      placeholder={
+                        row.done
+                          ? "처리 완료"
+                          : existing(row)
+                            ? "기존 비밀번호 유지"
+                            : "신규 학생: 6자 이상"
+                      }
+                      onChange={(e) =>
+                        update(row.id, "password", e.target.value)
+                      }
+                    />
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setRows((list) => [...list, blank()])}
+                    aria-label={`${index + 1}행 삭제`}
+                    onClick={() =>
+                      setRows((list) => list.filter((_, i) => i !== index))
+                    }
                   >
-                    <Plus size={18} />
-                    학생 추가
+                    <Trash2 size={18} />
                   </button>
-                  <button
-                    className="primary"
-                    disabled={!rows.some((r) => !r.done)}
-                  >
-                    {busy
-                      ? "등록 중…"
-                      : rows.some((r) => !r.done)
-                        ? `${rows.filter((r) => !r.done).length}명 등록`
-                        : "등록 완료"}
-                  </button>
+                  <p className="roster-row-status" role="status">
+                    {row.status ||
+                      (row.number &&
+                        (existing(row)
+                          ? "기존 학생 · 평가에 배정"
+                          : "신규 학생 · 계정 등록 후 배정"))}
+                  </p>
                 </div>
-              </fieldset>
-            </form>
-          </>
-        )}
+              ))}
+            </div>
+            <div className="roster-actions">
+              <button
+                type="button"
+                disabled={pendingCount >= rosterLimit}
+                onClick={() => setRows((list) => [...list, blank()])}
+              >
+                <Plus size={18} />
+                학생 추가
+              </button>
+              <button className="primary" disabled={demo || !pendingCount}>
+                {busy
+                  ? "등록·배정 중…"
+                  : pendingCount
+                    ? `${pendingCount}명 등록·배정`
+                    : "처리 완료"}
+              </button>
+            </div>
+          </fieldset>
+        </form>
         <p role="status" aria-live="polite">
           {note}
         </p>
@@ -294,8 +391,8 @@ export function StudentRoster({ classroom }) {
       <section className="panel">
         <h2>등록된 학생 {members.length}명</h2>
         <p>
-          이미 배포한 평가에 새 학생을 추가하려면 해당 평가의 ‘학급별 배포’에서
-          ‘명부 갱신’을 눌러 주세요.
+          기존 학생의 학번·이름을 명부에 넣고 등록·배정하면, 누락된 평가 배정도
+          함께 처리합니다.
         </p>
         {members.length ? (
           <table>

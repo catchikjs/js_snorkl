@@ -1,6 +1,10 @@
 import { admin, endpoint, env } from "../_shared/server.ts";
 import { hash } from "../_shared/contract.js";
-import { enrollStudent, EnrollmentError } from "../_shared/enrollment.js";
+import {
+  enrollStudent,
+  enrollRosterStudent,
+  EnrollmentError,
+} from "../_shared/enrollment.js";
 function studentSchool() {
   const encoded = Deno.env.get("STUDENT_SCHOOL_BASE64");
   // Some hosted runtimes corrupt non-ASCII environment values. Decode UTF-8 explicitly.
@@ -13,13 +17,15 @@ function studentSchool() {
 endpoint(async (req) => {
   const db = admin();
   const input = await req.json();
-  if (input.op === "enroll") {
+  if (["enroll", "enrollRoster"].includes(input.op)) {
     const { data, error } = await db.auth.getUser(
       (req.headers.get("authorization") || "").replace(/^Bearer /i, ""),
     );
     if (error || !data.user)
       throw new EnrollmentError("교사 계정으로 로그인하세요.");
-    return await enrollStudent(
+    const enroll =
+      input.op === "enrollRoster" ? enrollRosterStudent : enrollStudent;
+    return await enroll(
       db,
       data.user.id,
       input,

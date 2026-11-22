@@ -59,6 +59,25 @@
   flex-wrap: wrap;
   gap: 12px;
 }
+.roster-file {
+  padding: 20px;
+  margin-top: 20px;
+  border: 1px solid #dce3f5;
+  border-radius: 12px;
+  background: #f7f9ff;
+}
+.roster-file h3,
+.roster-file p {
+  margin-bottom: 12px;
+}
+.roster-help {
+  color: #5c6782;
+  font-size: 0.9rem;
+}
+.roster-filename {
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
 .roster .panel form .roster-row button,
 .roster .panel form .roster-actions button {
   width: auto;
@@ -83,6 +102,7 @@
 }
 @media print {
   .roster form,
+  .roster-file,
   .roster details {
     display: none;
   }

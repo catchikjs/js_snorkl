@@ -38,6 +38,9 @@ export async function database(dir) {
     await db.exec(
       await readFile("supabase/migrations/202611220001_distribution_updates.sql", "utf8"),
     );
+    await db.exec(
+      await readFile("supabase/migrations/202611220002_roster_assignment.sql", "utf8"),
+    );
     return db;
   }
   await db.transaction(async (db) => {
