@@ -2,6 +2,40 @@ import Papa from "papaparse";
 
 export const rosterLimit = 200;
 
+export function matchesRosterClass(number, classroom) {
+  return (
+    !classroom.number_prefix ||
+    (typeof number === "string" &&
+      /^[0-9]{5}$/.test(number.trim()) &&
+      number.trim().startsWith(classroom.number_prefix))
+  );
+}
+
+export function selectRosterClass(rows, classroom) {
+  if (
+    classroom.number_prefix &&
+    rows.some((row) => !/^[0-9]{5}$/.test(row.number))
+  )
+    throw Error(
+      "학번은 학년 1자리·반 2자리·번호 2자리의 5자리 숫자로 입력하세요.",
+    );
+  const selected = rows.filter((row) =>
+    matchesRosterClass(row.number, classroom),
+  );
+  if (!selected.length)
+    throw Error(
+      `${classroom.name}의 학번(${classroom.number_prefix}xx)에 해당하는 학생이 없습니다.`,
+    );
+  return { rows: selected, excluded: rows.length - selected.length };
+}
+
+export function validateRosterClass(rows, classroom) {
+  if (rows.some((row) => !matchesRosterClass(row.number, classroom)))
+    throw Error(
+      `${classroom.name}에는 학번 ${classroom.number_prefix}xx 학생만 등록·배정할 수 있습니다. 다른 반의 행을 삭제하세요.`,
+    );
+}
+
 export function parseRosterRows(rows, { requirePassword = false } = {}) {
   const entries = rows
     .map((columns, i) => ({ columns, line: i + 1 }))
@@ -148,7 +182,7 @@ export function mergeRosterRows(current, incoming) {
   ];
 }
 
-export async function rosterTemplate() {
+export async function rosterTemplate(classroom = {}) {
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("학생 명부");
@@ -170,6 +204,11 @@ export async function rosterTemplate() {
     "기존 학생은 학번·이름을 정확히 쓰고 비밀번호를 비워 두세요. 기존 비밀번호는 유지됩니다.",
     "학번은 텍스트 형식을 유지하세요. 최대 200명, 파일 크기 5MB입니다.",
     "화면 상단에서 선택한 학급에 등록되며, 담당 교사가 해당 학급에 배포한 활성 평가에도 배정됩니다.",
+    ...(classroom.number_prefix
+      ? [
+          `${classroom.name}의 학번은 ${classroom.number_prefix}xx입니다. 다른 반 학생은 불러오기에서 제외됩니다.`,
+        ]
+      : []),
   ].forEach((text) => {
     guide.addRow([text]).font = { name: "Arial", size: 11 };
   });

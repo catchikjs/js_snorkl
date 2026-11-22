@@ -1,5 +1,41 @@
 import { test, expect } from "@playwright/test";
 
+test("distribution previews only selected classes and blocks a mixed-class roster", async ({page}) => {
+  const sent = [];
+  let mixed = true;
+  const first = "20000000-0000-4000-8000-000000000001";
+  await page.route("**/__classroom", async (route) => {
+    const {op,p} = route.request().postDataJSON();
+    if (op === "roster") return route.fulfill({json:{value:[
+      {number:p.class_id===first && mixed ? "10201" : p.class_id===first ? "10101" : "10201",label:"가상 학생"}
+    ]}});
+    if (op === "distribute") sent.push(p.class_id);
+    if (op !== "home") return route.continue();
+    const response = await route.fetch(), body = await response.json();
+    body.value.classes.forEach(c => c.number_prefix=c.id===first ? "101" : "102");
+    return route.fulfill({response,json:body});
+  });
+  await page.goto("/");
+  await page.getByRole("button",{name:"교사 모드로 전환"}).click();
+  const dialog = page.getByRole("dialog",{name:"교사 모드 비밀번호"});
+  await dialog.getByLabel("비밀번호",{exact:true}).fill("browser-test-teacher");
+  await dialog.getByRole("button",{name:"교사 모드로 전환"}).click();
+  await page.getByRole("button",{name:"역함수의 식 구하기 확정"}).click();
+  await page.getByRole("main").getByRole("button",{name:"학급별 배포",exact:true}).click();
+  await expect(page.getByText("배포 대상: 1학년 1반 1명",{exact:true})).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("다른 반 학번");
+  await expect(page.getByRole("button",{name:"선택 학급에 배포"})).toBeDisabled();
+  expect(sent).toEqual([]);
+  mixed=false;
+  await page.getByRole("checkbox",{name:"1학년 1반",exact:true}).uncheck();
+  await page.getByRole("checkbox",{name:"1학년 1반",exact:true}).check();
+  await expect(page.getByRole("button",{name:"선택 학급에 배포"})).toBeEnabled();
+  await expect(page.getByRole("checkbox",{name:"1학년 2반",exact:true})).not.toBeChecked();
+  await page.getByRole("button",{name:"선택 학급에 배포"}).click();
+  await expect(page.getByText("배포했습니다.",{exact:true}).first()).toBeVisible();
+  expect(sent).toEqual([first]);
+});
+
 for (const update of ["timer", "focus", "visibilitychange", "online"]) {
   test(`an empty student task list receives its first distribution on ${update}`, async ({ page, browser }) => {
     const title = `첫 배포 ${update}`;

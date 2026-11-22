@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { originalPath } from "../supabase/functions/_shared/storage-path.js";
 export const demo = import.meta.env.DEV && !import.meta.env.VITE_SUPABASE_URL;
 export const client =
   import.meta.env.VITE_SUPABASE_URL &&
@@ -138,7 +139,7 @@ export async function deliver(uid: string, q: string) {
     });
     if (slot.state === "open")
       for (const f of frozen.files)
-        await upload("math-originals", slot.id + "/" + f.name, f.blob);
+        await upload("math-originals", originalPath(slot, f.name), f.blob);
     await api("finalize", { sub: slot.id });
     await device(key, null);
     return true;

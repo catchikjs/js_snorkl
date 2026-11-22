@@ -9,6 +9,13 @@ async function enterTeacher(page) {
 test("student handwriting → immutable receipt → manual review → feedback-only release", async ({
   page,
 }) => {
+  const uploaded = [];
+  page.on("request", request => {
+    if (request.url().endsWith("/__classroom") && request.method()==="POST") {
+      const body=request.postDataJSON();
+      if (body.op==="upload" && body.p.bucket==="math-originals") uploaded.push(body.p);
+    }
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "과제 열기" }).click();
   await page.getByRole("button", { name: /문항 1.*필수/ }).click();
@@ -29,6 +36,10 @@ test("student handwriting → immutable receipt → manual review → feedback-o
   );
   await page.getByRole("button", { name: "제출하기" }).click();
   await expect(page.getByRole("button", { name: /1회차 원본/ })).toBeVisible();
+  expect(uploaded).toHaveLength(2);
+  expect(uploaded.every(f => /^2026\/class-[\da-f-]+\/student-0001-[\da-f-]+\/assessment-[\da-f-]+\/question-1-v1\/[\da-f-]+\/(strokes.json|page-0.png)$/.test(f.path))).toBe(true);
+  const inkFile=uploaded.find(f => f.path.endsWith("/strokes.json"));
+  expect(JSON.parse(Buffer.from(inkFile.base64,"base64").toString()).description).toBe("변수의 역할을 바꾸었습니다.");
   await enterTeacher(page);
   await page.getByRole("button", { name: "제출·검토", exact: true }).click();
   await page.getByRole("button", { name: /역함수의 식 구하기/ }).click();

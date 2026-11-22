@@ -15,9 +15,9 @@ begin
   end if;
 
   for class_number in 1..7 loop
-    insert into math_private.classes (school, year, name)
-    values (school_name, school_year, format('1학년 %s반', class_number))
-    on conflict (school, year, name) do update set name = excluded.name
+    insert into math_private.classes (school, year, name, number_prefix)
+    values (school_name, school_year, format('1학년 %s반', class_number), '1'||lpad(class_number::text,2,'0'))
+    on conflict (school, year, name) do update set number_prefix = excluded.number_prefix
     returning id into target_class_id;
 
     if exists (

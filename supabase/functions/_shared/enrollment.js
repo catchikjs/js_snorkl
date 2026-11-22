@@ -29,6 +29,10 @@ export async function enrollStudent(db, teacher, input, school, year) {
       p,
     });
     if (error) {
+      if (error.message?.includes("roster_class_mismatch"))
+        throw new EnrollmentError(
+          "학번의 학년·반이 선택한 학급과 다릅니다. 학생 소속을 확인하세요.",
+        );
       if (error.message?.includes("enroll_duplicate"))
         throw new EnrollmentError(
           "이 학번은 이미 등록되어 있습니다. 기존 계정은 변경하지 않았습니다.",
@@ -116,6 +120,10 @@ export async function enrollRosterStudent(db, teacher, input, school, year) {
       p,
     });
     if (error) {
+      if (error.message?.includes("roster_class_mismatch"))
+        throw new EnrollmentError(
+          "학번의 학년·반이 선택한 학급과 다릅니다. 학생 소속을 확인하세요.",
+        );
       if (error.message?.includes("enroll_denied"))
         throw new EnrollmentError("담당 학급에만 학생을 배정할 수 있습니다.");
       if (error.message?.includes("roster_mismatch"))

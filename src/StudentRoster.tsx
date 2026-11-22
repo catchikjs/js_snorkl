@@ -8,6 +8,9 @@ import {
   parseRosterRows,
   rosterTemplate,
   rosterLimit,
+  matchesRosterClass,
+  selectRosterClass,
+  validateRosterClass,
 } from "./roster-import.js";
 import "./roster.css";
 
@@ -54,9 +57,10 @@ export function StudentRoster({ classroom }) {
     );
 
   function importRows(imported) {
-    setRows(mergeRosterRows(rows, imported));
+    const selected = selectRosterClass(imported, classroom);
+    setRows(mergeRosterRows(rows, selected.rows));
     setNote(
-      `${imported.length}명을 불러왔습니다. ${classroom.name}에 등록·배정할 명부를 확인한 뒤 아래 버튼을 누르세요.`,
+      `${classroom.name} ${selected.rows.length}명을 불러왔습니다.${selected.excluded ? ` 다른 반 학생 ${selected.excluded}명은 제외했습니다.` : ""} 명부를 확인한 뒤 아래 버튼을 누르세요.`,
     );
   }
   async function readFile(e) {
@@ -81,7 +85,7 @@ export function StudentRoster({ classroom }) {
   async function downloadTemplate() {
     setReading(true);
     try {
-      const bytes = await rosterTemplate();
+      const bytes = await rosterTemplate(classroom);
       if (!live.current) return;
       const url = URL.createObjectURL(
         new Blob([bytes], {
@@ -108,6 +112,7 @@ export function StudentRoster({ classroom }) {
       parseRosterRows(
         pending.map((row) => [row.number, row.label, row.password]),
       );
+      validateRosterClass(pending, classroom);
       if (pending.some((row) => !existing(row) && !row.password))
         throw Error(
           "신규 학생의 초기 비밀번호를 입력하세요. 기존 학생은 비밀번호를 비워 둘 수 있습니다.",
@@ -216,6 +221,20 @@ export function StudentRoster({ classroom }) {
         <p>
           <strong>배정할 학급: {classroom.name}</strong>
         </p>
+        {classroom.number_prefix && (
+          <p>
+            학번 {classroom.number_prefix}xx 학생만 등록·배정합니다. 전체 학년
+            명부를 올려도 다른 반 학생은 제외됩니다.
+          </p>
+        )}
+        {members.some(
+          (member) => !matchesRosterClass(member.number, classroom),
+        ) && (
+          <p role="alert">
+            현재 명부에 다른 반 학번이 포함돼 있습니다. 배포 전에 학생 소속을
+            수정해야 합니다.
+          </p>
+        )}
         <p>
           등록한 학생을 이 학급에 내가 배포한 활성 평가에도 배정합니다. 기존
           학생은 학번·이름을 확인하고 비밀번호를 유지합니다.

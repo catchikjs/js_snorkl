@@ -4,6 +4,7 @@ import { api, message, fileUrl, demo } from "./api";
 import { Field, Rich, txt, plain } from "./MathEditor";
 import { Capture } from "./Capture";
 import { matchesDraft, prepareApproval } from "./authoring.js";
+import { matchesRosterClass } from "./roster-import.js";
 export const blankQuestion = () => ({
   public: { prompt: [], images: [], choices: [], required: true },
   points: 10,
@@ -89,12 +90,56 @@ export function Author({ id, classes, open, changed }) {
     [busy, lock] = useState(false),
     [pane, setPane] = useState(0),
     [targets, target] = useState<string[]>([]),
+    [targetRosters, setTargetRosters] = useState<any[] | null>(null),
+    [targetError, setTargetError] = useState(""),
+    [cancelTarget, setCancelTarget] = useState<any>(null),
     [qr, code] = useState<any>(),
     [studentPreview, setPreview] = useState<any>(null),
     [copy, copying] = useState(false),
     [copyTitle, name] = useState(""),
     [copyClass, to] = useState(classes[0].id);
   const baseRevision = useRef(0);
+  const targetKey = targets
+    .map(
+      (id) => `${id}:${classes.find((c) => c.id === id)?.number_prefix || ""}`,
+    )
+    .join(",");
+  async function readTargetRosters(selected) {
+    return Promise.all(
+      selected.map(async (class_id) => {
+        const classroom = classes.find((c) => c.id === class_id);
+        if (!classroom) throw Error("배포할 학급을 다시 선택하세요.");
+        const roster = await api("roster", { class_id });
+        return {
+          id: class_id,
+          name: classroom.name,
+          count: roster.length,
+          invalid: roster.filter(
+            (m) => !matchesRosterClass(m.number, classroom),
+          ).length,
+        };
+      }),
+    );
+  }
+  useEffect(() => {
+    if (tab !== 2) return;
+    let live = true;
+    setTargetRosters(null);
+    setTargetError("");
+    readTargetRosters(targets)
+      .then((rosters) => {
+        if (live) setTargetRosters(rosters);
+      })
+      .catch(() => {
+        if (live)
+          setTargetError(
+            "배포 대상 명부를 확인하지 못했습니다. 학급을 다시 선택하세요.",
+          );
+      });
+    return () => {
+      live = false;
+    };
+  }, [tab, targetKey]);
   async function reload(reset = false) {
     const b = await api("book", { book: id });
     info(b);
@@ -638,6 +683,7 @@ export function Author({ id, classes, open, changed }) {
               <input
                 type="checkbox"
                 checked={targets.includes(c.id)}
+                disabled={busy}
                 onChange={() =>
                   target(
                     targets.includes(c.id)
@@ -649,16 +695,39 @@ export function Author({ id, classes, open, changed }) {
               {c.name}
             </label>
           ))}
+          {targetError && <p role="alert">{targetError}</p>}
+          {!!targets.length && !targetError && (
+            <p role="status">
+              {targetRosters
+                ? `배포 대상: ${targetRosters.map((r) => `${r.name} ${r.count}명`).join(", ")}`
+                : "배포 대상 인원을 확인하는 중…"}
+            </p>
+          )}
+          {targetRosters?.some((r) => r.invalid) && (
+            <p role="alert">
+              선택한 학급 명부에 다른 반 학번이 포함돼 있습니다. 학생 소속을
+              수정한 뒤 배포하세요.
+            </p>
+          )}
           <button
             className="primary"
             disabled={
               busy ||
               !targets.length ||
+              !targetRosters ||
+              !!targetError ||
+              targetRosters.some((r) => r.invalid) ||
               dirty ||
               meta.approved !== meta.revision
             }
             onClick={() =>
               action(async () => {
+                const rosters = await readTargetRosters(targets);
+                setTargetRosters(rosters);
+                if (rosters.some((r) => r.invalid))
+                  throw Error(
+                    "명부에 다른 반 학생이 포함돼 있습니다. 학생 소속을 수정한 뒤 배포하세요.",
+                  );
                 const result = await Promise.allSettled(
                   targets.map((class_id) =>
                     api("distribute", { book: id, class_id }),
@@ -681,17 +750,27 @@ export function Author({ id, classes, open, changed }) {
             선택 학급에 배포
           </button>
           {meta.links.map((l) => (
-            <div className="inset" key={l.task}>
+            <div
+              className="inset"
+              key={l.task}
+              role="group"
+              aria-label={`${classes.find((c) => c.id === l.class_id)?.name} 배포 버전 ${l.revision}`}
+            >
               <h3>
                 {classes.find((c) => c.id === l.class_id)?.name} · 버전{" "}
                 {l.revision}
               </h3>
               <p>
-                {l.active ? "링크 활성" : "링크 중지"} · 배정 {l.people}명 ·{" "}
+                {l.withdrawn_at ? "배포 취소됨" : l.active ? "배포 중" : "링크 중지"}
+                {" "}· 배정 {l.people}명 ·{" "}
                 {new Date(l.starts).toLocaleString("ko-KR")} ~{" "}
                 {new Date(l.ends).toLocaleString("ko-KR")}
               </p>
+              {l.withdrawn_at && (
+                <p>학생의 열람·제출이 중단되어 있습니다. 기존 제출 답안은 보관됩니다.</p>
+              )}
               <button
+                disabled={busy}
                 onClick={() =>
                   action(async () =>
                     setPreview(
@@ -704,6 +783,7 @@ export function Author({ id, classes, open, changed }) {
               </button>
               <div className="tools">
                 <button
+                  disabled={busy || !!l.withdrawn_at}
                   onClick={() =>
                     action(() =>
                       navigator.clipboard
@@ -715,6 +795,7 @@ export function Author({ id, classes, open, changed }) {
                   링크 복사
                 </button>
                 <button
+                  disabled={busy || !!l.withdrawn_at}
                   onClick={() =>
                     action(async () =>
                       code({
@@ -732,12 +813,13 @@ export function Author({ id, classes, open, changed }) {
                   QR 보기
                 </button>
                 {[
-                  ["toggle", l.active ? "링크 중지" : "재활성화"],
+                  ["toggle", l.active ? "링크만 중지" : "링크 활성화"],
                   ["rotate", "재발급"],
                   ["refreshRoster", "명부 갱신"],
                 ].map(([op, label]) => (
                   <button
                     key={op}
+                    disabled={busy || !!l.withdrawn_at}
                     onClick={() =>
                       action(async () => {
                         await api(op, {
@@ -752,10 +834,74 @@ export function Author({ id, classes, open, changed }) {
                     {label}
                   </button>
                 ))}
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    if (!l.withdrawn_at) {
+                      say("");
+                      setCancelTarget(l);
+                      return;
+                    }
+                    action(async () => {
+                      const rosters = await readTargetRosters([l.class_id]);
+                      if (rosters.some((r) => r.invalid))
+                        throw Error(
+                          "명부에 다른 반 학생이 포함돼 있습니다. 학생 소속을 수정한 뒤 배포하세요.",
+                        );
+                      await api("resumeDistribution", {
+                        book: id, class_id: l.class_id, task: l.task,
+                      });
+                      await reload();
+                      changed();
+                      say("해당 학급의 배포를 재개했습니다. 기존 제출 답안은 유지됩니다.");
+                    });
+                  }}
+                >
+                  {l.withdrawn_at ? "배포 재개" : "배포 취소"}
+                </button>
               </div>
             </div>
           ))}
         </section>
+      )}
+      {cancelTarget && (
+        <div className="overlay">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-distribution-title"
+          >
+            <h2 id="cancel-distribution-title">학급 배포 취소</h2>
+            <p>
+              {classes.find((c) => c.id === cancelTarget.class_id)?.name} · 버전{" "}
+              {cancelTarget.revision} 배포를 취소합니다.
+            </p>
+            <p>
+              해당 반 학생의 과제 목록에서 사라지고 문제 열람과 제출이 중단됩니다.
+              평가 원본과 이미 제출된 답안은 보관되며, 나중에 배포를 재개할 수 있습니다.
+            </p>
+            {note && <p role="alert">{note}</p>}
+            <footer>
+              <button disabled={busy} onClick={() => setCancelTarget(null)}>
+                돌아가기
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => action(async () => {
+                  await api("cancelDistribution", {
+                    book: id, class_id: cancelTarget.class_id, task: cancelTarget.task,
+                  });
+                  await reload();
+                  setCancelTarget(null);
+                  changed();
+                  say("해당 학급의 배포를 취소했습니다. 기존 제출 답안은 보관됩니다.");
+                })}
+              >
+                {busy ? "처리 중…" : "배포 취소하기"}
+              </button>
+            </footer>
+          </section>
+        </div>
       )}
       {studentPreview && (
         <div className="overlay">

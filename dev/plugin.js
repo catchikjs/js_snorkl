@@ -91,7 +91,10 @@ export function classroomDemo(configuredPassword) {
             const { bucket, path } = p;
             if (
               !["math-sources", "math-originals"].includes(bucket) ||
-              !/^[-0-9a-f]{36}\/[a-zA-Z0-9_.-]+$/.test(path)
+              typeof path !== "string" ||
+              !/^[a-zA-Z0-9_./-]+$/.test(path) ||
+              path.split("/").some((part) => !part || part === "." || part === "..") ||
+              (bucket === "math-sources" && !/^[-0-9a-f]{36}\/[a-zA-Z0-9_.-]+$/.test(path))
             )
               throw Error();
             const allowed = await db.transaction(async (tx) => {

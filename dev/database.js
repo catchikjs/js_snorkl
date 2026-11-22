@@ -41,6 +41,15 @@ export async function database(dir) {
     await db.exec(
       await readFile("supabase/migrations/202611220002_roster_assignment.sql", "utf8"),
     );
+    await db.exec(
+      await readFile("supabase/migrations/202611220003_class_number_scope.sql", "utf8"),
+    );
+    await db.exec(
+      await readFile("supabase/migrations/202611220004_submission_folders.sql", "utf8"),
+    );
+    await db.exec(
+      await readFile("supabase/migrations/202611220005_distribution_cancellation.sql", "utf8"),
+    );
     return db;
   }
   await db.transaction(async (db) => {

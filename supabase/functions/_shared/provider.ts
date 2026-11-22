@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { analysis, keySchema, validateAnalysis, hash } from "./contract.js";
 import { env } from "./server.ts";
+import { analysisInput } from "./analysis-input.js";
 function strictSchema(v) {
   if (!v || typeof v !== "object") return v;
   if (Array.isArray(v)) return v.map(strictSchema);
@@ -39,13 +40,7 @@ export async function analyze(job, images) {
   const started = Date.now();
   const author = !!job.edition,
     schema = author ? keySchema : analysis;
-  const { question, ...rest } = job.payload;
-  const input = {
-    ...rest,
-    question: { ...question, images: undefined },
-    manifest: undefined,
-    description: rest.manifest?.description,
-  };
+  const input = analysisInput(job.payload);
   const content: any[] = [{ type: "input_text", text: JSON.stringify(input) }];
   for (const [id, url] of images) {
     content.push(
@@ -91,12 +86,12 @@ export async function analyze(job, images) {
     ? keySchema.parse(raw)
     : validateAnalysis(
         raw,
-        rest.rubric.criteria,
+        job.payload.rubric.criteria,
         images
           .map((i) => i[0])
           .filter((id) => !id.startsWith("question-"))
           .concat("description"),
-        rest.rubric.hints,
+        job.payload.rubric.hints,
       );
   return {
     output,
@@ -108,8 +103,8 @@ export async function analyze(job, images) {
     model: value.model,
     prompt_version: author ? 3 : 1,
     job_version: job.version,
-    question_version: job.edition || rest.version,
-    rubric_version: rest.version,
+    question_version: job.edition || job.payload.version,
+    rubric_version: job.payload.version,
     submission: job.sub,
     input_hash: await hash(
       new TextEncoder().encode(JSON.stringify([input, images])).buffer,

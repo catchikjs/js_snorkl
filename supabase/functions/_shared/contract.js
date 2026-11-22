@@ -203,6 +203,7 @@ export async function validateFiles(m, read) {
       const ink = JSON.parse(new TextDecoder().decode(bytes));
       if (
         ink.schema_version !== 1 ||
+        (ink.description !== undefined && ink.description !== m.description) ||
         JSON.stringify(ink.pages.map((pg) => pg.page_id)) !==
           JSON.stringify(m.pages) ||
         ink.pages.some(

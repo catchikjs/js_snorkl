@@ -61,7 +61,7 @@ const manifest = {
 async function submit(n, key = crypto.randomUUID()) {
   const slot = await cmd(student(n), "prepare", { key, q, manifest });
   for (const [name, bytes] of Object.entries(files))
-    assets.set(slot.id + "/" + name, bytes.buffer);
+    assets.set(slot.storage_prefix + "/" + name, bytes.buffer);
   return cmd(student(n), "finalize", { sub: slot.id });
 }
 let first;
@@ -196,10 +196,11 @@ test("idempotency, per-item limit and sealed storage row policies", async () => 
     keys[res.findIndex((r) => r.status === "fulfilled")],
   );
   assert.ok(second.id !== first);
+  const {storage_prefix} = await cmd(teacher, "inspect", {sub:first});
   const can = async (u, writing) =>
     db.transaction(async (tx) => {
       await tx.query("select set_config('request.uid',$1,true)", [u]);
-      return rpc(tx, "math_asset_ok", [first + "/page-0.png", writing]);
+      return rpc(tx, "math_asset_ok", [storage_prefix + "/page-0.png", writing]);
     });
   assert.equal(await can(student(1), true), false);
   assert.equal(await can(student(2), false), false);
@@ -297,7 +298,7 @@ test("authenticated Storage insert/select use slot and ownership; no overwrite p
   const key = crypto.randomUUID(),
     user = student(2),
     slot = await cmd(user, "prepare", { key, q, manifest }),
-    path = slot.id + "/page-0.png";
+    path = slot.storage_prefix + "/page-0.png";
   async function as(actor, sql, params) {
     return db.transaction(async (tx) => {
       await tx.query("select set_config('request.uid',$1,true)", [actor]);

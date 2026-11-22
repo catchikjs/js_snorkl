@@ -85,7 +85,7 @@ function draw(canvas, pg, current = null) {
 }
 async function snapshot(body) {
   const files: { name: string; blob: Blob }[] = [],
-    ink = { schema_version: 1, pages: body.pages };
+    ink = { schema_version: 1, description: body.description, pages: body.pages };
   files.push({
     name: "strokes.json",
     blob: new Blob([JSON.stringify(ink)], { type: "application/json" }),

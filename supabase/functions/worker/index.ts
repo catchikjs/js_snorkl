@@ -1,5 +1,6 @@
 import { admin, env } from "../_shared/server.ts";
 import { analyze } from "../_shared/provider.ts";
+import { originalPath } from "../_shared/storage-path.js";
 function encodeBase64(buffer: ArrayBuffer) {
   const bytes = new Uint8Array(buffer);
   const chunks = [];
@@ -34,7 +35,7 @@ Deno.serve(async (req) => {
     if (slot) {
       const res = await db.storage
         .from("math-originals")
-        .remove(slot.files.map((f) => slot.id + "/" + f.name));
+        .remove(slot.files.map((f) => originalPath(slot, f.name)));
       if (!res.error) await db.rpc("math_gc", { done: slot.id });
     }
     return new Response(null, { status: 204 });
@@ -51,7 +52,9 @@ Deno.serve(async (req) => {
       )) {
         const { data, error } = await db.storage
           .from("math-originals")
-          .download(job.sub + "/" + f.name);
+          .download(originalPath({
+            id: job.sub, storage_prefix: job.payload.storage_prefix,
+          }, f.name));
         if (error) throw error;
         const id = f.name.startsWith("page-")
           ? job.payload.manifest.pages[Number(f.name.match(/\d+/)[0])]

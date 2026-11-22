@@ -6,7 +6,42 @@ import {
   parseRosterText,
   mergeRosterRows,
   rosterTemplate,
+  selectRosterClass,
+  validateRosterClass,
 } from "../src/roster-import.js";
+
+test("a whole-grade file selects only the configured class and manual edits cannot bypass it", () => {
+  const rows = parseRosterText(
+    [18, 20, 20, 20, 19, 20, 20]
+      .flatMap((n, i) =>
+        Array.from(
+          { length: n },
+          (_, j) =>
+            `10${i + 1}${String(j + 1).padStart(2, "0")},가상 학생,abcdef`,
+        ),
+      )
+      .join("\n"),
+  );
+  const classroom = { name: "1학년 1반", number_prefix: "101" };
+  const selected = selectRosterClass(rows, classroom);
+  assert.equal(selected.rows.length, 18);
+  assert.equal(selected.excluded, 119);
+  assert.ok(selected.rows.every((row) => row.number.startsWith("101")));
+  assert.doesNotThrow(() => validateRosterClass(selected.rows, classroom));
+  assert.throws(() => validateRosterClass(rows, classroom), /101xx/);
+  assert.throws(
+    () => selectRosterClass([{ number: "1011" }], classroom),
+    /5자리/,
+  );
+  assert.throws(
+    () => selectRosterClass([{ number: "10201" }], classroom),
+    /해당하는 학생/,
+  );
+  assert.equal(
+    selectRosterClass(rows, { name: "다른 번호 체계" }).rows.length,
+    137,
+  );
+});
 
 test("CSV and TSV keep leading zeros, quoted commas, Korean and password whitespace", async () => {
   const csv =

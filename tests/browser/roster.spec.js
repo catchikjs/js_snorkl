@@ -1,9 +1,11 @@
 import { test, expect } from "@playwright/test";
 import ExcelJS from "exceljs";
 
-async function openRoster(page) {
+async function openRoster(page, prefix = "") {
   const requests = [];
-  const members = [{ uid: "existing", number: "0001", label: "기존 학생" }];
+  const members = [
+    { uid: "existing", number: prefix ? "10101" : "0001", label: "기존 학생" },
+  ];
   const failures = new Set();
   // Exercise the real component with a controlled account HTTP boundary.
   await page.route("**/src/api.ts", (route) =>
@@ -45,18 +47,44 @@ async function openRoster(page) {
       },
     });
   });
-  await page.route("**/__roster_test", (route) =>
+  await page.route("**/__roster_test*", (route) =>
     route.fulfill({
       contentType: "text/html",
       body: '<!doctype html><html lang="ko"><meta charset="utf-8"><div id="app"></div><script type="module" src="/tests/browser/roster-harness.js"></script></html>',
     }),
   );
-  await page.goto("/__roster_test");
+  await page.goto("/__roster_test" + (prefix ? "?prefix=" + prefix : ""));
   await expect(
     page.getByRole("heading", { name: "등록된 학생 1명" }),
   ).toBeVisible();
   return requests;
 }
+
+test("mixed-class file excludes other classes and edited rows are validated before registration", async ({
+  page,
+}) => {
+  const requests = await openRoster(page, "101");
+  await page.getByLabel("학생 명부 파일").setInputFiles({
+    name: "전체학년.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(
+      "학번,이름,초기 비밀번호\n10102,가상 학생,abcdef\n10201,다른 반,abcdef\n10701,다른 반,abcdef\n",
+    ),
+  });
+  await expect(page.getByText(/다른 반 학생 2명은 제외/)).toBeVisible();
+  await expect(page.getByLabel("1행 학번")).toHaveValue("10102");
+  await expect(page.getByLabel("2행 학번")).toHaveCount(0);
+  await page.getByLabel("1행 학번").fill("10201");
+  await page.getByRole("button", { name: "1명 등록·배정" }).click();
+  await expect(page.getByText(/다른 반의 행을 삭제/)).toBeVisible();
+  expect(requests).toHaveLength(0);
+  await page.getByLabel("1행 학번").fill("10102");
+  await page.getByRole("button", { name: "1명 등록·배정" }).click();
+  await expect(
+    page.getByRole("button", { name: "처리 완료", exact: true }),
+  ).toBeDisabled();
+  expect(requests.map((p) => p.number)).toEqual(["10102"]);
+});
 
 test("Excel roster preview registers and assigns once, preserves existing passwords and retries only failed rows", async ({
   page,

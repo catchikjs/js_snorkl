@@ -5,6 +5,7 @@ import {
   checkMath,
   content,
 } from "./contract.js";
+import { originalPath } from "./storage-path.js";
 const library = new Set(
   "library book new copy saveBook generate approve distribute resolve rotate toggle refreshRoster extra limit".split(
     " ",
@@ -16,6 +17,8 @@ const classroom = new Set(
   ),
 );
 export async function dispatch(op, p, command, read) {
+  if (["cancelDistribution", "resumeDistribution"].includes(op))
+    return command("math_distribution", op, p);
   if (op === "deleteBook")
     return command("math_hidden_books", "hide", p);
   if (op === "library") {
@@ -43,7 +46,7 @@ export async function dispatch(op, p, command, read) {
   if (op === "finalize") {
     const slot = await command("math_command", "seal", p);
     if (slot.state === "final") return slot;
-    await validateFiles(slot.manifest, (name) => read(slot.id + "/" + name));
+    await validateFiles(slot.manifest, (name) => read(originalPath(slot, name)));
     return command("math_command", "commit", p);
   }
   if (!library.has(op) && !classroom.has(op)) throw Error("unavailable");

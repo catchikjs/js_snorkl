@@ -71,7 +71,7 @@ const receipts = await Promise.allSettled(
     for (const [name, blob] of files) {
       const { error } = await db.storage
         .from("math-originals")
-        .upload(s.id + "/" + name, blob);
+        .upload((s.storage_prefix || s.id) + "/" + name, blob);
       if (error) throw Error("upload");
     }
     await cmd("finalize", { sub: s.id });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, device, fileUrl, message } from "./api";
 import { Field, Rich, plain, txt } from "./MathEditor";
 import { download } from "./Author";
+import { originalPath } from "../supabase/functions/_shared/storage-path.js";
 export function feedbackParts(f) {
   return ["strength", "focus", "next_step"].map((k) =>
     typeof f?.[k] === "string" ? txt(f[k]) : f?.[k] || [],
@@ -109,7 +110,10 @@ export function Review({ id, teacher, uid, close, onChange, adjacent, open }) {
           .filter((f) => !f.name.endsWith("json"))
           .map(async (f) => ({
             name: f.name,
-            url: await fileUrl("math-originals", id + "/" + f.name),
+            url: await fileUrl(
+              "math-originals",
+              originalPath({ id, storage_prefix: v.storage_prefix }, f.name),
+            ),
           })),
       ),
     );

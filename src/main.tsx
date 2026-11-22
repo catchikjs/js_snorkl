@@ -326,6 +326,15 @@ function ClassApp({ uid }) {
   }, []);
   const taskKey = tasks.map((t) => t.id).join(",");
   useEffect(() => {
+    if (
+      loaded && !teacher && taskId &&
+      !home.tasks.some((t) => t.id === taskId)
+    ) {
+      go("할 일");
+      say("이 평가의 배포가 취소되었거나 배정이 변경되었습니다. 저장된 풀이는 보관됩니다.");
+    }
+  }, [loaded, teacher, taskId, taskKey]);
+  useEffect(() => {
     if (taskKey) summaryLoad().catch((e) => say(message(e)));
   }, [taskKey]);
   useEffect(() => {
@@ -357,6 +366,7 @@ function ClassApp({ uid }) {
   }
   async function openTask(id) {
     const d = await api("detail", { task: id });
+    say("");
     taskSel(id);
     details(d);
     edit("");
@@ -387,7 +397,7 @@ function ClassApp({ uid }) {
         const h = await api("home");
         if (!live) return;
         homeSet(h);
-        if (taskId) {
+        if (taskId && h.tasks.some((t) => t.id === taskId)) {
           const d = await api("detail", { task: taskId });
           if (!live) return;
           details(d);
