@@ -16,7 +16,10 @@ export const rpc = async (db, fn, args) =>
       args,
     )
   ).rows[0].value;
-export async function database(dir) {
+export async function database(dir, { omitMigrations = [] } = {}) {
+  // Schema subsets are only for isolated, in-memory deployment compatibility tests.
+  if (dir && omitMigrations.length)
+    throw Error("Migration subsets require an in-memory database");
   const db = new PGlite(dir);
   if ((await db.query("select to_regclass('math_private.books') as b")).rows[0].b) {
     if (
@@ -67,6 +70,7 @@ export async function database(dir) {
  create function pgmq.archive(text,bigint) returns boolean language sql as $$delete from pgmq.messages where msg_id=$2 returning true$$;
  `);
     for (const file of (await readdir("supabase/migrations")).sort()) {
+      if (omitMigrations.includes(file)) continue;
       const sql = (await readFile("supabase/migrations/" + file, "utf8"))
         .replace("create extension if not exists pgmq;", "")
         .replace(

@@ -4,8 +4,8 @@ import { database, rpc, teacher, student } from "../dev/database.js";
 import { enrollClassRosterStudent } from "../supabase/functions/_shared/enrollment.js";
 import { parseRosterText, routeRosterRows } from "../src/roster-import.js";
 
-test("four-column import repairs 137 students across seven classes without recreating accounts or deleting work", async () => {
-  const db = await database();
+async function verifyImport(omitMigrations = []) {
+  const db = await database(undefined, { omitMigrations });
   const school = "명부 검증 학교",
     counts = [18, 20, 20, 20, 19, 20, 20];
   const classes = counts.map((_, i) => ({
@@ -233,4 +233,15 @@ test("four-column import repairs 137 students across seven classes without recre
   } finally {
     await db.close();
   }
-});
+}
+
+test("four-column import repairs 137 students across seven classes without recreating accounts or deleting work", () =>
+  verifyImport(),
+);
+
+test("class roster import works on the production schema without folder or cancellation migrations", () =>
+  verifyImport([
+    "202611220004_submission_folders.sql",
+    "202611220005_distribution_cancellation.sql",
+  ]),
+);
