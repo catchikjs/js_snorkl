@@ -1,4 +1,11 @@
 import { test, expect } from "@playwright/test";
+async function enterTeacher(page) {
+  await page.getByRole("button", { name: "교사 모드로 전환" }).click();
+  const dialog = page.getByRole("dialog", { name: "교사 모드 비밀번호" });
+  await dialog.getByLabel("비밀번호", { exact: true }).fill("browser-test-teacher");
+  await dialog.getByRole("button", { name: "교사 모드로 전환" }).click();
+  await expect(page.getByRole("button", { name: "학생 모드로 전환" })).toBeVisible();
+}
 test("student handwriting → immutable receipt → manual review → feedback-only release", async ({
   page,
 }) => {
@@ -22,7 +29,7 @@ test("student handwriting → immutable receipt → manual review → feedback-o
   );
   await page.getByRole("button", { name: "제출하기" }).click();
   await expect(page.getByRole("button", { name: /1회차 원본/ })).toBeVisible();
-  await page.getByRole("button", { name: "교사 모드로 전환" }).click();
+  await enterTeacher(page);
   await page.getByRole("button", { name: "제출·검토", exact: true }).click();
   await page.getByRole("button", { name: /역함수의 식 구하기/ }).click();
   await page.locator("summary").filter({ hasText: "0001" }).click();
@@ -43,12 +50,18 @@ test("student handwriting → immutable receipt → manual review → feedback-o
   await expect(page.getByText("변수 교환을 잘 표현했습니다.")).toBeVisible();
   await expect(page.getByText("공개 점수", { exact: true })).toHaveCount(0);
 });
-test("teacher edits a formula, crops a rotated PDF and opens class QR", async ({
-  page,
+test("teacher distributes a cropped PDF and an already-open student screen loads its content", async ({
+  page, browser,
 }) => {
+  const studentContext = await browser.newContext();
+  const studentPage = await studentContext.newPage();
+  await studentPage.clock.install();
+  await studentPage.goto("/");
+  await expect(studentPage.getByRole("button", { name: "과제 열기" })).toBeVisible();
   await page.goto("/");
-  await page.getByRole("button", { name: "교사 모드로 전환" }).click();
+  await enterTeacher(page);
   await page.getByRole("button", { name: "역함수의 식 구하기 확정" }).click();
+  await page.getByLabel("평가명", { exact: true }).fill("PDF 배포 확인");
   await page.getByRole("button", { name: "파일 · 영역 가져오기" }).click();
   const pdfPage = await page.context().newPage();
   await pdfPage.setContent("<h1>FUNCTION</h1><p>x + 2</p>");
@@ -87,16 +100,28 @@ test("teacher edits a formula, crops a rotated PDF and opens class QR", async ({
   ).toBeLessThan(4);
   await page.getByRole("button", { name: "현재 문항에 넣기" }).click();
   await expect(page.getByAltText("문제 자료 1")).toBeVisible();
+  const expectedImage = await page.getByAltText("문제 자료 1").getAttribute("src");
   await page.getByRole("button", { name: "ƒ 수식" }).first().click();
   await page.getByRole("dialog").locator("textarea").fill("\\frac{x-1}{2}");
   await page.getByRole("button", { name: "적용", exact: true }).click();
   await page.getByRole("button", { name: "임시 저장" }).click();
-  await expect(page.getByText("저장했습니다.", { exact: true })).toBeVisible();
+  await expect(page.getByText("저장했습니다.", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "답안·루브릭", exact: true }).click();
   await page.getByRole("button", { name: "최종 확정" }).click();
   await page.getByRole("button", { name: "선택 학급에 배포" }).click();
+  await expect(page.getByText("배포했습니다.", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "QR 보기" }).last().click();
   await expect(page.getByAltText("학급 배포 링크 QR")).toBeVisible();
+  await studentPage.bringToFront();
+  await studentPage.clock.runFor(31000);
+  await studentPage.getByRole("button", { name: /PDF 배포 확인/ }).click({ timeout: 5000 });
+  await studentPage.getByRole("button", { name: /문항 1.*필수/ }).click();
+  const image = studentPage.getByAltText("문제 그림 1");
+  await expect(image).toBeVisible();
+  await expect(image).toHaveAttribute("src", expectedImage);
+  await expect.poll(() => image.evaluate((img) => img.naturalWidth)).toBe(previewSize[0]);
+  await expect(studentPage.locator(".solve .katex")).not.toHaveCount(0);
+  await studentContext.close();
 });
 test("offline submission is queued and delivered once after reconnect", async ({
   page,

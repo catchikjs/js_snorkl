@@ -16,6 +16,12 @@ export default defineConfig({
     command: "npm run dev -- --host 127.0.0.1 --port 5193 --strictPort",
     url: "http://127.0.0.1:5193",
     reuseExistingServer: false,
-    env: { GOODMATH_DEMO_DIR: mkdtempSync(join(tmpdir(), "goodmath-qa-")) },
+    env: {
+      GOODMATH_DEMO_DIR: mkdtempSync(join(tmpdir(), "goodmath-qa-")),
+      GOODMATH_DEMO_TEACHER_PASSWORD: "browser-test-teacher",
+      VITE_SUPABASE_URL: "",
+      VITE_SUPABASE_PUBLISHABLE_KEY: "",
+      VITE_APP_ORIGIN: "",
+    },
   },
 });

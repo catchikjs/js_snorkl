@@ -376,13 +376,40 @@ function ClassApp({ uid }) {
   }
   useEffect(() => {
     if (!loaded) return;
-    let live = true;
-    const poll = () => {
-      if (!live || document.hidden) return;
-      reloadDetail().catch(() => {});
-      if (!taskId && taskKey) summaryLoad().catch(() => {});
+    let live = true,
+      polling = false;
+    const poll = async () => {
+      if (!live || polling || document.hidden) return;
+      polling = true;
+      try {
+        // A distribution can add the first task; refresh membership and tasks
+        // before loading details instead of polling only previously known IDs.
+        const h = await api("home");
+        if (!live) return;
+        homeSet(h);
+        if (taskId) {
+          const d = await api("detail", { task: taskId });
+          if (!live) return;
+          details(d);
+          sum((s) => ({ ...s, [taskId]: d }));
+        } else {
+          const all = await Promise.all(
+            h.tasks
+              .filter((t) => t.class_id === cl?.id)
+              .map(async (t) => [t.id, await api("summary", { task: t.id })]),
+          );
+          if (live) sum(Object.fromEntries(all));
+        }
+      } catch {
+        // Retain the current screen and retry on the next update/reconnection.
+      } finally {
+        polling = false;
+      }
     };
     const timer = setInterval(poll, 30000);
+    window.addEventListener("online", poll);
+    window.addEventListener("focus", poll);
+    document.addEventListener("visibilitychange", poll);
     const channel = client
       ?.channel("math-updates-" + uid)
       .on(
@@ -399,9 +426,12 @@ function ClassApp({ uid }) {
     return () => {
       live = false;
       clearInterval(timer);
+      window.removeEventListener("online", poll);
+      window.removeEventListener("focus", poll);
+      document.removeEventListener("visibilitychange", poll);
       if (channel) client.removeChannel(channel);
     };
-  }, [uid, taskId, taskKey, loaded]);
+  }, [uid, taskId, taskKey, cl?.id, loaded]);
   useEffect(() => {
     let live = true;
     if (["피드백", "나의 기록", "학습 기록"].includes(page))
