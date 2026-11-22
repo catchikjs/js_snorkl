@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, message } from "./api";
 import { Rich } from "./MathEditor";
 import { drawNotebookPage } from "./notebook-drawing.js";
-import "./live-notes.css";
 
 const time = (value) =>
   value
@@ -215,22 +214,29 @@ export function LiveNotes({ task, classroom, questions, openSubmission }) {
     };
     refresh.current = load;
     load();
-    const wake = () => {
-      if (auto) load();
+    return () => {
+      live = false;
     };
-    const timer = auto ? setInterval(load, 3000) : null;
+  }, [task.id, questionId]);
+  useEffect(() => {
+    if (!auto) return;
+    const wake = () => refresh.current();
+    wake();
+    const timer = setInterval(wake, 3000);
     window.addEventListener("focus", wake);
     window.addEventListener("online", wake);
     document.addEventListener("visibilitychange", wake);
     return () => {
-      live = false;
-      if (timer) clearInterval(timer);
+      clearInterval(timer);
       window.removeEventListener("focus", wake);
       window.removeEventListener("online", wake);
       document.removeEventListener("visibilitychange", wake);
     };
   }, [task.id, questionId, auto]);
-  const students = snapshot?.q === questionId ? snapshot.students : [];
+  const students =
+    snapshot?.task === task.id && snapshot?.q === questionId
+      ? snapshot.students
+      : [];
   const nameOf = useCallback(
     (s) =>
       hiddenNames
@@ -243,8 +249,9 @@ export function LiveNotes({ task, classroom, questions, openSubmission }) {
     <section className="live-notes" aria-label="학급 실시간 노트">
       <header className="live-header">
         <div>
-          <span className="live-eyebrow">{classroom?.name}</span>
-          <h2>실시간 노트</h2>
+          <h2>
+            실시간 노트 <span className="live-eyebrow">{classroom?.name}</span>
+          </h2>
           <p>
             서버에 저장된 초안을{" "}
             {auto ? "3초마다 확인합니다" : "수동으로 갱신합니다"}. 오프라인
@@ -317,29 +324,32 @@ export function LiveNotes({ task, classroom, questions, openSubmission }) {
           {error}
         </p>
       )}
-      {!!snapshot && (
-        <div className="live-counts">
-          {["전체", "미작성", "초안 있음", "제출 완료"].map((s) => (
-            <span key={s}>
-              {s}{" "}
-              <b>
-                {s === "전체"
-                  ? students.length
-                  : students.filter((student) => stateOf(student) === s).length}
-              </b>
-            </span>
-          ))}
-        </div>
-      )}
-      {question && (
-        <details className="live-question">
-          <summary>문항 {question.position} 문제 보기</summary>
-          <Rich value={question.body.prompt} />
-          {question.body.images.map((x, i) => (
-            <img key={i} src={x.png} alt={`문제 그림 ${i + 1}`} />
-          ))}
-        </details>
-      )}
+      <div className="live-summary">
+        {!!snapshot && (
+          <div className="live-counts">
+            {["전체", "미작성", "초안 있음", "제출 완료"].map((s) => (
+              <span key={s}>
+                {s}{" "}
+                <b>
+                  {s === "전체"
+                    ? students.length
+                    : students.filter((student) => stateOf(student) === s)
+                        .length}
+                </b>
+              </span>
+            ))}
+          </div>
+        )}
+        {question && (
+          <details className="live-question">
+            <summary>문항 {question.position} 문제 보기</summary>
+            <Rich value={question.body.prompt} />
+            {question.body.images.map((x, i) => (
+              <img key={i} src={x.png} alt={`문제 그림 ${i + 1}`} />
+            ))}
+          </details>
+        )}
+      </div>
       <div className="live-grid">
         {students
           .filter(
@@ -360,7 +370,7 @@ export function LiveNotes({ task, classroom, questions, openSubmission }) {
               <div className="live-card-heading">
                 <strong>{nameOf(s)}</strong>
                 <span
-                  className={`live-state ${s.submission ? "submitted" : s.revision ? "draft" : "empty"}`}
+                  className={`live-state ${s.submission ? "submitted" : s.revision ? "draft" : "idle"}`}
                 >
                   {stateOf(s)}
                 </span>

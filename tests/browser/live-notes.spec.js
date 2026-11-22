@@ -53,7 +53,7 @@ test("teacher sees saved student ink, pages and photos before submission, with c
     await student.mouse.move(area.x + 170, area.y + 100, { steps: 8 });
     await student.mouse.up();
     await student
-      .getByLabel("풀이 설명", { exact: true })
+      .getByRole("textbox", { name: "풀이 설명", exact: true })
       .fill("제출 전 교사가 확인할 수 있는 풀이");
     await expect(
       student.getByText("서버 저장 완료", { exact: true }),
@@ -76,7 +76,10 @@ test("teacher sees saved student ink, pages and photos before submission, with c
       return dark;
     });
     expect(pixels).toBeGreaterThan(10);
-    await teacher.screenshot({ path: "/private/tmp/goodmath-live-notes-class.png", fullPage: false });
+    await teacher.screenshot({
+      path: "/private/tmp/goodmath-live-notes-class.png",
+      fullPage: false,
+    });
     await card.click();
     const note = teacher.getByRole("dialog", {
       name: "0001 연습 학생 1 · 문항 1 노트",
@@ -88,18 +91,16 @@ test("teacher sees saved student ink, pages and photos before submission, with c
     await student.bringToFront();
     await student.getByRole("button", { name: "페이지", exact: true }).click();
     await student
-      .getByLabel("풀이 설명", { exact: true })
+      .getByRole("textbox", { name: "풀이 설명", exact: true })
       .fill("두 번째 페이지까지 저장");
-    await student
-      .getByLabel("풀이 사진 · JPG / PNG")
-      .setInputFiles({
-        name: "note.png",
-        mimeType: "image/png",
-        buffer: Buffer.from(
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WL7vM8AAAAASUVORK5CYII=",
-          "base64",
-        ),
-      });
+    await student.getByLabel("풀이 사진 · JPG / PNG").setInputFiles({
+      name: "note.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WL7vM8AAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
     await expect(
       student.getByText("서버 저장 완료", { exact: true }),
     ).toBeVisible();
@@ -107,6 +108,36 @@ test("teacher sees saved student ink, pages and photos before submission, with c
     await expect(note.getByRole("img", { name: /노트 [12]쪽/ })).toHaveCount(2);
     await expect(note.getByAltText("풀이 사진 1")).toBeVisible();
     await note.getByRole("button", { name: "닫기", exact: true }).click();
+    const preview = await card.locator("canvas").elementHandle();
+    const checked = await board.locator(".live-checked").textContent();
+    await board
+      .getByRole("button", { name: "자동 갱신 켜짐", exact: true })
+      .click();
+    expect(await preview.evaluate((canvas) => canvas.isConnected)).toBe(true);
+    await expect(board.locator(".live-checked")).toHaveText(checked);
+    await student.context().setOffline(true);
+    await student
+      .getByRole("textbox", { name: "풀이 설명", exact: true })
+      .fill("오프라인에서 이어 쓴 풀이");
+    await expect(
+      student.getByText("연결되면 다시 저장", { exact: true }),
+    ).toBeVisible();
+    await expect(card).toContainText("두 번째 페이지까지 저장");
+    await student.context().setOffline(false);
+    await expect(
+      student.getByText("서버 저장 완료", { exact: true }),
+    ).toBeVisible();
+    await expect(card).toContainText("두 번째 페이지까지 저장");
+    await board.getByRole("button", { name: "새로고침", exact: true }).click();
+    await expect(card).toContainText("오프라인에서 이어 쓴 풀이");
+    await board
+      .getByRole("button", { name: "자동 갱신 꺼짐", exact: true })
+      .click();
+    await board.getByLabel("노트 작성 상태").selectOption("미작성");
+    await expect(board.locator(".live-card")).toHaveCount(24);
+    await board.getByLabel("노트 작성 상태").selectOption("초안 있음");
+    await expect(board.locator(".live-card")).toHaveCount(1);
+    await board.getByLabel("노트 작성 상태").selectOption("전체");
     await board
       .getByRole("button", { name: "이름 가리기", exact: true })
       .click();
@@ -188,6 +219,30 @@ test("teacher sees saved student ink, pages and photos before submission, with c
     const count = requests.length;
     await teacher.waitForTimeout(3500); // Observe a full refresh interval while paused.
     expect(requests).toHaveLength(count);
+    let failOnce = true;
+    await teacher.route("**/__classroom", (route) => {
+      if (route.request().postDataJSON().op === "liveNotes" && failOnce) {
+        failOnce = false;
+        return route.fulfill({
+          status: 403,
+          json: { error: "조회 권한을 확인하세요." },
+        });
+      }
+      return route.continue();
+    });
+    await board.getByRole("button", { name: "새로고침", exact: true }).click();
+    await expect(board.getByRole("alert")).toContainText(
+      "노트를 불러오지 못했습니다.",
+    );
+    await expect(board.locator(".live-card")).toHaveCount(0);
+    await board.getByRole("button", { name: "새로고침", exact: true }).click();
+    await expect(board.locator(".live-card")).toHaveCount(1);
+    await teacher.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await teacher.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
     await teacher.screenshot({
       path: "/private/tmp/goodmath-live-notes.png",
       fullPage: true,

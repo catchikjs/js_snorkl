@@ -53,7 +53,10 @@ export function drawNotebookPage(canvas, pg, current = null) {
       if (![p?.x, p?.y, prev?.x, prev?.y].every(Number.isFinite)) continue;
       pen.lineWidth =
         Math.min(100, s.width) *
-        (0.5 + (Number.isFinite(p.pressure) ? Math.max(0, Math.min(1, p.pressure || 0.5)) : 0.5));
+        (0.5 +
+          (Number.isFinite(p.pressure)
+            ? Math.max(0, Math.min(1, p.pressure || 0.5))
+            : 0.5));
       pen.beginPath();
       if (!i) {
         pen.arc(p.x, p.y, pen.lineWidth / 2, 0, 2 * Math.PI);

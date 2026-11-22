@@ -46,6 +46,7 @@ import { QrAccessNotice } from "./QrAccessNotice";
 import { LiveNotes } from "./LiveNotes";
 import { Review, Released, exportCsv } from "./Review";
 import "./style.css";
+import "./live-notes.css";
 const date = (t) =>
   new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric" }).format(
     new Date(t),
