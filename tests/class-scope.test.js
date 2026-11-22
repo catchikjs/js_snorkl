@@ -199,15 +199,19 @@ test("repair splits 137 misclassified students, preserves work and accounts, and
       (await command(correct.uid, "detail", { task: link.task })).questions,
       detail.questions,
     );
-    const class2 = await library("distribute", { book, class_id: classes[1] });
-    assert.deepEqual(
-      (await command(misplaced.uid, "home")).tasks.map((t) => t.id),
-      [class2.task],
-    );
-    await assert.rejects(
-      command(correct.uid, "detail", { task: class2.task }),
-      /denied/,
-    );
+    for (let i = 1; i < classes.length; i++) {
+      const distributed = await library("distribute", { book, class_id: classes[i] });
+      const sameClass = students.filter(s => s.class_id === classes[i]);
+      const links = (await library("book", { book })).links;
+      assert.equal(links.find(l => l.task === distributed.task).people, counts[i]);
+      assert.equal(links.find(l => l.task === link.task).people, 18);
+      for (const s of sameClass)
+        assert.deepEqual((await command(s.uid, "home")).tasks.map(t => t.id), [distributed.task]);
+      await assert.rejects(command(correct.uid, "detail", { task: distributed.task }), /denied/);
+      for (const s of students.filter(s => s.class_id !== classes[i]))
+        assert.equal((await db.query("select math_private.assigned($1,$2) as allowed", [distributed.task,s.uid])).rows[0].allowed, false);
+      assert.equal((await library("distribute", { book, class_id: classes[i] })).task, distributed.task);
+    }
   } finally {
     await db.close();
   }

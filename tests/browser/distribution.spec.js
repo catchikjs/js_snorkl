@@ -81,3 +81,63 @@ for (const update of ["timer", "focus", "visibilitychange", "online"]) {
     }
   });
 }
+
+
+for (const scenario of ["second-only", "partial-retry"]) {
+  test(`distribution verifies the selected class and exposes the result beside the button: ${scenario}`, async ({page}) => {
+    const first = "20000000-0000-4000-8000-000000000001";
+    const second = "20000000-0000-4000-8000-000000000002";
+    const command = async (op, p = {}) => {
+      const res = await page.request.post("/__classroom", {data:{op,p}});
+      expect(res.ok()).toBe(true);
+      return (await res.json()).value;
+    };
+    await command("teacher-login",{password:"browser-test-teacher"});
+    const [source] = await command("library");
+    const {working} = await command("book",{book:source.id});
+    const title = `선택 학급 검증 ${scenario}`;
+    working.title = title;
+    const book = await command("new",{class_id:first,title,working});
+    await command("approve",{book,revision:1,working});
+    const previous = await command("distribute",{book,class_id:first});
+    const sent = [];
+    let failSecond = scenario === "partial-retry";
+    await page.route("**/__classroom", async route => {
+      const {op,p} = route.request().postDataJSON();
+      if (op === "distribute") {
+        sent.push(p.class_id);
+        if (p.class_id === second && failSecond) {
+          failSecond = false;
+          return route.fulfill({status:503,json:{value:null}});
+        }
+      }
+      return route.continue();
+    });
+    await page.goto("/");
+    await page.getByRole("button",{name:title+" 확정",exact:true}).click();
+    await page.getByRole("main").getByRole("button",{name:"학급별 배포",exact:true}).click();
+    if (scenario === "second-only") {
+      await page.getByRole("checkbox",{name:"1학년 1반",exact:true}).uncheck();
+      await expect(page.getByRole("button",{name:"선택 학급에 배포",exact:true})).toBeDisabled();
+      await expect(page.getByText("배포할 학급을 선택하세요.",{exact:true})).toBeVisible();
+    }
+    await page.getByRole("checkbox",{name:"1학년 2반",exact:true}).check();
+    await page.getByRole("button",{name:"선택 학급에 배포",exact:true}).click();
+    if (scenario === "partial-retry") {
+      await expect(page.getByText(/1학년 2반 배포 실패:/)).toBeVisible();
+      await expect(page.getByRole("checkbox",{name:"1학년 1반",exact:true})).not.toBeChecked();
+      await expect(page.getByRole("checkbox",{name:"1학년 2반",exact:true})).toBeChecked();
+      await expect(page.getByRole("group",{name:"1학년 2반 배포 버전 1",exact:true})).toHaveCount(0);
+      await page.getByRole("button",{name:"선택 학급에 배포",exact:true}).click();
+    }
+    await expect(page.getByText("1학년 2반 1명 배포 완료",{exact:true})).toBeVisible();
+    await expect(page.getByRole("group",{name:"1학년 2반 배포 버전 1",exact:true})).toContainText("배정 1명");
+    await expect(page.getByRole("heading",{name:"학급별 배포 내역",exact:true})).toBeVisible();
+    expect(sent).toEqual(scenario === "second-only" ? [second] : [first,second,second]);
+    const saved = await command("book",{book});
+    expect(saved.links).toHaveLength(2);
+    expect(saved.links.find(l=>l.class_id===first).task).toBe(previous.task);
+    expect(saved.links.find(l=>l.class_id===first).people).toBe(25);
+    expect(saved.links.find(l=>l.class_id===second).people).toBe(1);
+  });
+}

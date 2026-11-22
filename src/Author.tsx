@@ -87,6 +87,7 @@ export function Author({ id, classes, open, changed }) {
     [tab, show] = useState(0),
     [capture, clip] = useState(false),
     [note, say] = useState(""),
+    [distributionNote, setDistributionNote] = useState(""),
     [busy, lock] = useState(false),
     [pane, setPane] = useState(0),
     [targets, target] = useState<string[]>([]),
@@ -159,6 +160,7 @@ export function Author({ id, classes, open, changed }) {
           index(0);
           show(0);
           target([b.class_id]);
+          setDistributionNote("");
         }
       })
       .catch((e) => say(message(e)));
@@ -197,6 +199,21 @@ export function Author({ id, classes, open, changed }) {
     pub = (k, v) => update({ ...q, public: { ...q.public, [k]: v } }),
     priv = (k, v) => update({ ...q, private: { ...q.private, [k]: v } });
   const dirty = JSON.stringify(w) !== JSON.stringify(meta.working);
+  const distributionBlocked = busy
+    ? "요청을 처리하고 있습니다. 잠시 기다려 주세요."
+    : !targets.length
+      ? "배포할 학급을 선택하세요."
+      : dirty
+        ? "수정한 내용이 있습니다. 답안·루브릭에서 최종 확정한 뒤 배포하세요."
+        : meta.approved !== meta.revision
+          ? "답안·루브릭에서 최종 확정한 뒤 배포하세요."
+          : targetError
+            ? targetError
+            : !targetRosters
+              ? "선택한 학급의 명부를 확인하고 있습니다."
+              : targetRosters.some((r) => r.invalid)
+                ? "명부의 다른 반 학생 소속을 수정한 뒤 배포하세요."
+                : "";
   const drafts = meta.generated.filter((g) => g.position === pos + 1);
   const currentDraft = drafts.find((g) => matchesDraft(g, w, meta, pos));
   const aiNotReady = !demo && meta.ai?.ready === false;
@@ -710,45 +727,71 @@ export function Author({ id, classes, open, changed }) {
             </p>
           )}
           <button
+            type="button"
             className="primary"
-            disabled={
-              busy ||
-              !targets.length ||
-              !targetRosters ||
-              !!targetError ||
-              targetRosters.some((r) => r.invalid) ||
-              dirty ||
-              meta.approved !== meta.revision
-            }
+            disabled={!!distributionBlocked}
+            aria-describedby={distributionBlocked ? "distribution-reason" : undefined}
             onClick={() =>
               action(async () => {
-                const rosters = await readTargetRosters(targets);
-                setTargetRosters(rosters);
-                if (rosters.some((r) => r.invalid))
-                  throw Error(
-                    "명부에 다른 반 학생이 포함돼 있습니다. 학생 소속을 수정한 뒤 배포하세요.",
+                const selected = [...targets];
+                setDistributionNote("선택한 학급의 명부와 배포 결과를 확인하는 중…");
+                try {
+                  const rosters = await readTargetRosters(selected);
+                  setTargetRosters(rosters);
+                  if (rosters.some((r) => r.invalid))
+                    throw Error(
+                      "명부에 다른 반 학생이 포함돼 있습니다. 학생 소속을 수정한 뒤 배포하세요.",
+                    );
+                  const result = await Promise.allSettled(
+                    selected.map((class_id) =>
+                      api("distribute", { book: id, class_id }),
+                    ),
                   );
-                const result = await Promise.allSettled(
-                  targets.map((class_id) =>
-                    api("distribute", { book: id, class_id }),
-                  ),
-                );
-                const failed = targets.filter(
-                  (_, i) => result[i].status === "rejected",
-                );
-                target(failed);
-                await reload();
-                changed();
-                say(
-                  failed.length
-                    ? "배포 실패 · 선택된 반만 재시도하세요."
-                    : "배포했습니다.",
-                );
+                  const saved = await api("book", { book: id });
+                  info(saved);
+                  const outcomes = selected.map((class_id, i) => {
+                    const response = result[i];
+                    const name = classes.find((c) => c.id === class_id)?.name;
+                    if (response.status === "rejected")
+                      return { class_id, failed: true, text: `${name} 배포 실패: ${message(response.reason)}` };
+                    const link = saved.links.find((l) =>
+                      l.task === response.value?.task && l.class_id === class_id &&
+                      l.revision === meta.approved && !l.withdrawn_at,
+                    );
+                    if (response.value?.class_id !== class_id || !link)
+                      return { class_id, failed: true, text: `${name}: 배포 결과를 확인하지 못했습니다. 이 반만 다시 시도하세요.` };
+                    return { class_id, failed: false, text: `${name} ${link.people}명 배포 완료` };
+                  });
+                  const failed = outcomes.filter((r) => r.failed).map((r) => r.class_id);
+                  target(failed);
+                  setDistributionNote(outcomes.map((r) => r.text).join("\n"));
+                  changed();
+                  say(
+                    failed.length
+                      ? "배포 실패 · 선택된 반만 재시도하세요."
+                      : "배포했습니다.",
+                  );
+                } catch (error) {
+                  setDistributionNote(`배포 확인 실패: ${message(error)} 선택한 반을 확인하고 다시 시도하세요.`);
+                  throw error;
+                }
               })
             }
           >
-            선택 학급에 배포
+            {busy ? "처리 중…" : "선택 학급에 배포"}
           </button>
+          {distributionBlocked && <p id="distribution-reason" role="status">{distributionBlocked}</p>}
+          {distributionNote && (
+            <div role="status" aria-live="polite" className="notice">
+              {distributionNote.split("\n").map((line, i) => <p key={i}>{line}</p>)}
+            </div>
+          )}
+          {!!meta.links.length && (
+            <div>
+              <h3>학급별 배포 내역</h3>
+              <p>이미 배포된 학급과 인원입니다. 위에서 학급을 선택해도 기존 배포는 유지됩니다.</p>
+            </div>
+          )}
           {meta.links.map((l) => (
             <div
               className="inset"
