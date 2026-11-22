@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import QRCode from "qrcode";
 
 test("distribution previews only selected classes and blocks a mixed-class roster", async ({page}) => {
   const sent = [];
@@ -122,19 +124,53 @@ for (const scenario of ["second-only", "partial-retry"]) {
       await expect(page.getByText("배포할 학급을 선택하세요.",{exact:true})).toBeVisible();
     }
     await page.getByRole("checkbox",{name:"1학년 2반",exact:true}).check();
+    if (scenario !== "partial-retry") {
+      await expect(page.getByRole("button",{name:"1학년 1반 QR 보기",exact:true})).toHaveCount(0);
+      await expect(page.getByText(/선택한 학급에 배포된 평가가 없습니다/)).toBeVisible();
+    }
     await page.getByRole("button",{name:"선택 학급에 배포",exact:true}).click();
     if (scenario === "partial-retry") {
-      await expect(page.getByText(/1학년 2반 배포 실패:/)).toBeVisible();
+      const failedDialog = page.getByRole("alertdialog",{name:"일부 학급 배포 실패",exact:true});
+      await expect(failedDialog).toContainText("1학년 1반 25명에게 배포되었습니다.");
+      await expect(failedDialog).toContainText("1학년 2반 배포 실패:");
+      await failedDialog.getByRole("button",{name:"확인",exact:true}).click();
       await expect(page.getByRole("checkbox",{name:"1학년 1반",exact:true})).not.toBeChecked();
       await expect(page.getByRole("checkbox",{name:"1학년 2반",exact:true})).toBeChecked();
       await expect(page.getByRole("group",{name:"1학년 2반 배포 버전 1",exact:true})).toHaveCount(0);
       await page.getByRole("button",{name:"선택 학급에 배포",exact:true}).click();
     }
+    const completed = page.getByRole("alertdialog",{name:"배포 완료",exact:true});
+    await expect(completed).toContainText("1학년 2반 1명에게 배포되었습니다.");
+    await expect(completed.getByRole("button",{name:"1학년 1반 QR 보기",exact:true})).toHaveCount(0);
+    if (scenario !== "partial-retry") {
+      await completed.getByRole("button",{name:"1학년 2반 QR 보기",exact:true}).click();
+      const qr = page.getByRole("dialog",{name:"1학년 2반 배포 QR",exact:true});
+      await expect(qr.getByAltText("1학년 2반 배포 링크 QR")).toBeVisible();
+      const latest = await command("book",{book});
+      const secondLink = latest.links.find(l=>l.class_id===second);
+      const expectedHref = new URL("/a/"+secondLink.token,page.url()).href;
+      await expect(qr.getByRole("link",{name:"1학년 2반 배포 링크 열기",exact:true})).toHaveAttribute("href",expectedHref);
+      const downloaded = page.waitForEvent("download");
+      await qr.getByRole("button",{name:"SVG 저장",exact:true}).click();
+      const file = await downloaded;
+      expect(file.suggestedFilename()).toBe("1학년 2반-배포-QR.svg");
+      expect(await readFile(await file.path(),"utf8")).toBe(await QRCode.toString(expectedHref,{type:"svg"}));
+      await qr.getByRole("button",{name:"닫기",exact:true}).click();
+      await expect(page.getByRole("group",{name:"1학년 1반 배포 버전 1",exact:true})).toHaveCount(0);
+      await page.getByRole("button",{name:"전체 학급 배포 내역 보기",exact:true}).click();
+      await page.getByRole("group",{name:"1학년 1반 배포 버전 1",exact:true}).getByRole("button",{name:"1학년 1반 QR 보기",exact:true}).click();
+      const firstQr = page.getByRole("dialog",{name:"1학년 1반 배포 QR",exact:true});
+      await expect(firstQr.getByRole("link",{name:"1학년 1반 배포 링크 열기",exact:true})).toHaveAttribute("href",new URL("/a/"+previous.token,page.url()).href);
+      await firstQr.getByRole("button",{name:"닫기",exact:true}).click();
+    } else {
+      await completed.getByRole("button",{name:"확인",exact:true}).click();
+    }
     await expect(page.getByText("1학년 2반 1명 배포 완료",{exact:true})).toBeVisible();
     await expect(page.getByRole("group",{name:"1학년 2반 배포 버전 1",exact:true})).toContainText("배정 1명");
     await expect(page.getByRole("heading",{name:"학급별 배포 내역",exact:true})).toBeVisible();
-    expect(sent).toEqual(scenario === "second-only" ? [second] : [first,second,second]);
+    expect(sent).toEqual(scenario === "partial-retry" ? [first,second,second] : [second]);
     const saved = await command("book",{book});
+    expect(saved.class_id).toBe(first);
     expect(saved.links).toHaveLength(2);
     expect(saved.links.find(l=>l.class_id===first).task).toBe(previous.task);
     expect(saved.links.find(l=>l.class_id===first).people).toBe(25);

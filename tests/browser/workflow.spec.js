@@ -121,8 +121,8 @@ test("teacher distributes a cropped PDF and an already-open student screen loads
   await page.getByRole("button", { name: "최종 확정" }).click();
   await page.getByRole("button", { name: "선택 학급에 배포" }).click();
   await expect(page.getByText("배포했습니다.", { exact: true }).first()).toBeVisible();
-  await page.getByRole("button", { name: "QR 보기" }).last().click();
-  await expect(page.getByAltText("학급 배포 링크 QR")).toBeVisible();
+  await page.getByRole("alertdialog", { name: "배포 완료", exact: true }).getByRole("button", { name: "1학년 1반 QR 보기", exact: true }).click();
+  await expect(page.getByAltText("1학년 1반 배포 링크 QR")).toBeVisible();
   await studentPage.bringToFront();
   await studentPage.clock.runFor(31000);
   await studentPage.getByRole("button", { name: /PDF 배포 확인/ }).click({ timeout: 5000 });

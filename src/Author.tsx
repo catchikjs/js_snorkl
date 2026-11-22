@@ -5,6 +5,7 @@ import { Field, Rich, txt, plain } from "./MathEditor";
 import { Capture } from "./Capture";
 import { matchesDraft, prepareApproval } from "./authoring.js";
 import { matchesRosterClass } from "./roster-import.js";
+import { DistributionNotice } from "./DistributionNotice";
 export const blankQuestion = () => ({
   public: { prompt: [], images: [], choices: [], required: true },
   points: 10,
@@ -88,6 +89,9 @@ export function Author({ id, classes, open, changed }) {
     [capture, clip] = useState(false),
     [note, say] = useState(""),
     [distributionNote, setDistributionNote] = useState(""),
+    [distributionResult, setDistributionResult] = useState<any[] | null>(null),
+    [lastDistributionClasses, setLastDistributionClasses] = useState<string[]>([]),
+    [showAllDistributions, setShowAllDistributions] = useState(false),
     [busy, lock] = useState(false),
     [pane, setPane] = useState(0),
     [targets, target] = useState<string[]>([]),
@@ -161,6 +165,9 @@ export function Author({ id, classes, open, changed }) {
           show(0);
           target([b.class_id]);
           setDistributionNote("");
+          setDistributionResult(null);
+          setLastDistributionClasses([b.class_id]);
+          setShowAllDistributions(false);
         }
       })
       .catch((e) => say(message(e)));
@@ -239,6 +246,23 @@ export function Author({ id, classes, open, changed }) {
   const url = (token) =>
     new URL("/a/" + token, import.meta.env.VITE_APP_ORIGIN || location.origin)
       .href;
+  const visibleClasses = targets.length ? targets : lastDistributionClasses;
+  const visibleLinks = meta.links.filter((l) => showAllDistributions || visibleClasses.includes(l.class_id));
+  async function showQr(requested) {
+    // Re-read the stored distribution so its class label and QR share one source.
+    const saved = await api("book", { book: id });
+    info(saved);
+    const link = saved.links.find((l) => l.task === requested.task && l.class_id === requested.class_id);
+    const classroom = classes.find((c) => c.id === link?.class_id);
+    if (!link?.active || link.withdrawn_at || !classroom)
+      throw Error("이 학급의 활성 배포 링크를 확인할 수 없습니다. 배포 내역을 확인하세요.");
+    const href = url(link.token);
+    const [png, svg] = await Promise.all([
+      QRCode.toDataURL(href, { width: 640 }),
+      QRCode.toString(href, { type: "svg" }),
+    ]);
+    code({ name: classroom.name, class_id: link.class_id, task: link.task, revision: link.revision, href, png, svg });
+  }
   return (
     <>
       <div className="pagehead">
@@ -701,13 +725,14 @@ export function Author({ id, classes, open, changed }) {
                 type="checkbox"
                 checked={targets.includes(c.id)}
                 disabled={busy}
-                onChange={() =>
+                onChange={() => {
+                  setShowAllDistributions(false);
                   target(
                     targets.includes(c.id)
                       ? targets.filter((x) => x !== c.id)
                       : [...targets, c.id],
-                  )
-                }
+                  );
+                }}
               />
               {c.name}
             </label>
@@ -734,6 +759,7 @@ export function Author({ id, classes, open, changed }) {
             onClick={() =>
               action(async () => {
                 const selected = [...targets];
+                setDistributionResult(null);
                 setDistributionNote("선택한 학급의 명부와 배포 결과를 확인하는 중…");
                 try {
                   const rosters = await readTargetRosters(selected);
@@ -760,10 +786,13 @@ export function Author({ id, classes, open, changed }) {
                     );
                     if (response.value?.class_id !== class_id || !link)
                       return { class_id, failed: true, text: `${name}: 배포 결과를 확인하지 못했습니다. 이 반만 다시 시도하세요.` };
-                    return { class_id, failed: false, text: `${name} ${link.people}명 배포 완료` };
+                    return { class_id, name, people: link.people, link, failed: false, text: `${name} ${link.people}명 배포 완료` };
                   });
                   const failed = outcomes.filter((r) => r.failed).map((r) => r.class_id);
                   target(failed);
+                  setLastDistributionClasses(selected);
+                  setShowAllDistributions(false);
+                  setDistributionResult(outcomes);
                   setDistributionNote(outcomes.map((r) => r.text).join("\n"));
                   changed();
                   say(
@@ -773,6 +802,7 @@ export function Author({ id, classes, open, changed }) {
                   );
                 } catch (error) {
                   setDistributionNote(`배포 확인 실패: ${message(error)} 선택한 반을 확인하고 다시 시도하세요.`);
+                  setDistributionResult([{ failed: true, text: `배포 결과 확인 실패: ${message(error)}` }]);
                   throw error;
                 }
               })
@@ -789,10 +819,14 @@ export function Author({ id, classes, open, changed }) {
           {!!meta.links.length && (
             <div>
               <h3>학급별 배포 내역</h3>
-              <p>이미 배포된 학급과 인원입니다. 위에서 학급을 선택해도 기존 배포는 유지됩니다.</p>
+              <p>{showAllDistributions ? "전체 학급의 배포 내역" : `확인 중인 학급: ${visibleClasses.map((class_id) => classes.find((c) => c.id === class_id)?.name).join(", ")}`}</p>
+              <button type="button" onClick={() => setShowAllDistributions(!showAllDistributions)}>
+                {showAllDistributions ? "선택 학급 배포 내역 보기" : "전체 학급 배포 내역 보기"}
+              </button>
             </div>
           )}
-          {meta.links.map((l) => (
+          {!showAllDistributions && !visibleLinks.length && <p>선택한 학급에 배포된 평가가 없습니다. ‘선택 학급에 배포’를 눌러 배포하세요.</p>}
+          {visibleLinks.map((l) => (
             <div
               className="inset"
               key={l.task}
@@ -838,22 +872,10 @@ export function Author({ id, classes, open, changed }) {
                   링크 복사
                 </button>
                 <button
-                  disabled={busy || !!l.withdrawn_at}
-                  onClick={() =>
-                    action(async () =>
-                      code({
-                        png: await QRCode.toDataURL(url(l.token), {
-                          width: 640,
-                        }),
-                        svg: await QRCode.toString(url(l.token), {
-                          type: "svg",
-                        }),
-                        name: classes.find((c) => c.id === l.class_id)?.name,
-                      }),
-                    )
-                  }
+                  disabled={busy || !!l.withdrawn_at || !l.active}
+                  onClick={() => action(() => showQr(l))}
                 >
-                  QR 보기
+                  {classes.find((c) => c.id === l.class_id)?.name} QR 보기
                 </button>
                 {[
                   ["toggle", l.active ? "링크만 중지" : "링크 활성화"],
@@ -906,6 +928,16 @@ export function Author({ id, classes, open, changed }) {
             </div>
           ))}
         </section>
+      )}
+      {distributionResult && (
+        <DistributionNotice
+          results={distributionResult}
+          onClose={() => setDistributionResult(null)}
+          onQr={(link) => {
+            setDistributionResult(null);
+            action(() => showQr(link));
+          }}
+        />
       )}
       {cancelTarget && (
         <div className="overlay">
@@ -964,20 +996,22 @@ export function Author({ id, classes, open, changed }) {
       )}
       {qr && (
         <div className="overlay">
-          <section role="dialog">
+          <section role="dialog" aria-modal="true" aria-labelledby="distribution-qr-title">
             <header>
-              <h2>{qr.name} 배포 QR</h2>
+              <h2 id="distribution-qr-title">{qr.name} 배포 QR</h2>
               <button onClick={() => code(null)}>닫기</button>
             </header>
-            <img src={qr.png} alt="학급 배포 링크 QR" />
+            <p>{qr.name} 학생용 · 버전 {qr.revision}</p>
+            <img src={qr.png} alt={`${qr.name} 배포 링크 QR`} />
+            <a href={qr.href} target="_blank" rel="noopener noreferrer">{qr.name} 배포 링크 열기</a>
             <footer>
-              <button onClick={() => download("학급-QR.png", qr.png)}>
+              <button onClick={() => download(`${qr.name}-배포-QR.png`, qr.png)}>
                 PNG 저장
               </button>
               <button
                 onClick={() =>
                   download(
-                    "학급-QR.svg",
+                    `${qr.name}-배포-QR.svg`,
                     "data:image/svg+xml;charset=utf-8," +
                       encodeURIComponent(qr.svg),
                   )

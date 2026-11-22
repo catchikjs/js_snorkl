@@ -46,6 +46,7 @@ for (const screen of ["draft", "submitted"]) {
         .getByRole("main")
         .getByRole("button", { name: "학급별 배포", exact: true })
         .click();
+      await teacherPage.getByRole("button", { name: "전체 학급 배포 내역 보기", exact: true }).click();
       const card = teacherPage.getByRole("group", {
         name: "1학년 1반 배포 버전 1",
         exact: true,

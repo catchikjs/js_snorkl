@@ -1,0 +1,25 @@
+.distribution-notice {
+  width: min(540px, calc(100vw - 24px));
+  max-height: 85dvh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  color: var(--navy);
+  background: white;
+  box-shadow: 0 24px 80px #151e3c33;
+}
+.distribution-notice::backdrop {
+  background: #151e3c80;
+}
+.distribution-notice ul {
+  padding-left: 22px;
+}
+.distribution-notice li {
+  margin-block: 18px;
+}
+.distribution-notice footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
