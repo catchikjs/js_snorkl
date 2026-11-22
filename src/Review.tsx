@@ -65,7 +65,7 @@ export async function exportCsv(task, detail) {
   download(task.title + ".csv", url);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function Review({ id, teacher, uid, close, onChange, adjacent, open }) {
+export function Review({ id, teacher, uid, close, onChange, adjacent, open, closeLabel = "목록" }) {
   const [view, set] = useState<any>(),
     [imgs, images] = useState<any[]>([]),
     [form, edit] = useState<any>(),
@@ -160,7 +160,7 @@ export function Review({ id, teacher, uid, close, onChange, adjacent, open }) {
               </button>
             </>
           )}
-          <button onClick={close}>목록</button>
+          <button onClick={close}>{closeLabel}</button>
         </div>
       </div>
       {teacher && (

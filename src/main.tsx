@@ -44,12 +44,14 @@ import { Progress } from "./Progress";
 import { StudentRoster } from "./StudentRoster";
 import { QrAccessNotice } from "./QrAccessNotice";
 import { LiveNotes } from "./LiveNotes";
+import { ClassDashboard } from "./ClassDashboard";
 import { NoticeToast, useNotice } from "./NoticeToast";
 import { Review, Released, exportCsv } from "./Review";
 import "./style.css";
 import "./live-notes.css";
 import "./notice-toast.css";
 import "./roster.css";
+import "./class-dashboard.css";
 const date = (t) =>
   new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric" }).format(
     new Date(t),
@@ -284,6 +286,7 @@ function ClassApp({ uid }) {
     [loaded, ready] = useState(false),
     [qrAccessError, setQrAccessError] = useState<any>(null),
     [liveNotesOpen, showLiveNotes] = useState(false),
+    [dashboardOpen, showDashboard] = useState(false),
     [drawer, menu] = useState(false),
     [records, recordsSet] = useState<any[]>([]),
     [summary, sum] = useState<any>({}),
@@ -371,6 +374,7 @@ function ClassApp({ uid }) {
     return () => { live = false; };
   }, [loaded]);
   function go(p) {
+    showDashboard(false);
     navigationVersion.current++;
     showLiveNotes(false);
     nav(p);
@@ -387,6 +391,7 @@ function ClassApp({ uid }) {
     const version = ++navigationVersion.current;
     const d = await api("detail", { task: id });
     if (version !== navigationVersion.current) return null;
+    showDashboard(false);
     showLiveNotes(false);
     say("");
     taskSel(id);
@@ -681,7 +686,7 @@ function ClassApp({ uid }) {
             ))}
           </select>
         </header>
-        <div className="content">
+        <div className={`content${dashboardOpen ? " dashboard-content" : ""}`}>
           {qrAccessError && <QrAccessNotice error={qrAccessError} onClose={() => { setQrAccessError(null); go("할 일"); }} />}
           {teacher && cl && page === "학생 관리" && <StudentRoster key={cl.id} classroom={cl} classes={classes} />}
           <NoticeToast notice={notice} onDismiss={dismissNotice} />
@@ -878,10 +883,11 @@ function ClassApp({ uid }) {
               ) : teacher ? (
                 <>
                   <div className="tabs" role="group" aria-label="평가 확인 화면">
-                    <button type="button" aria-pressed={!liveNotesOpen} className={!liveNotesOpen ? "selected" : ""} onClick={() => showLiveNotes(false)}>제출·검토</button>
-                    <button type="button" aria-pressed={liveNotesOpen} className={liveNotesOpen ? "selected" : ""} onClick={() => showLiveNotes(true)}>실시간 노트</button>
+                    <button type="button" aria-pressed={dashboardOpen} className={dashboardOpen ? "selected" : ""} onClick={() => { showDashboard(true); showLiveNotes(false); }}>진행률 대시보드</button>
+                    <button type="button" aria-pressed={!liveNotesOpen && !dashboardOpen} className={!liveNotesOpen && !dashboardOpen ? "selected" : ""} onClick={() => { showLiveNotes(false); showDashboard(false); }}>제출·검토</button>
+                    <button type="button" aria-pressed={liveNotesOpen} className={liveNotesOpen ? "selected" : ""} onClick={() => { showLiveNotes(true); showDashboard(false); }}>실시간 노트</button>
                   </div>
-                  {liveNotesOpen ? <LiveNotes key={task.id} task={task} classroom={classes.find((c) => c.id === task.class_id)} questions={detail.questions} openSubmission={(id) => { showLiveNotes(false); inspect(id); }} /> : <>
+                  {dashboardOpen ? <ClassDashboard key={task.id} task={task} classroom={classes.find(c => c.id === task.class_id)} detail={detail} uid={uid} /> : liveNotesOpen ? <LiveNotes key={task.id} task={task} classroom={classes.find((c) => c.id === task.class_id)} questions={detail.questions} openSubmission={(id) => { showLiveNotes(false); inspect(id); }} /> : <>
                   <div className="stats">
                     {[
                       ["배정", detail.members.length],

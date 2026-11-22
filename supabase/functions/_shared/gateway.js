@@ -18,6 +18,7 @@ const classroom = new Set(
   ),
 );
 export async function dispatch(op, p, command, read) {
+  if (op === "classDashboard") return command("math_class_dashboard", op, p);
   if (["liveNotes", "liveNote"].includes(op))
     return command("math_live_notes", op, p);
   if (op === "resolve") return resolveDistribution(p, command);

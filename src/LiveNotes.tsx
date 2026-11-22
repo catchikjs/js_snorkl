@@ -13,7 +13,7 @@ const time = (value) =>
     : "이전 저장본";
 const stateOf = (s) =>
   s.submission ? "제출 완료" : s.revision ? "초안 있음" : "미작성";
-const imagesOf = (body) =>
+export const imagesOf = (body) =>
   Array.isArray(body?.attachments)
     ? body.attachments.filter(
         (url) =>
@@ -22,7 +22,7 @@ const imagesOf = (body) =>
       )
     : [];
 
-function Paper({ page, label }) {
+export function Paper({ page, label }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (page && canvas.current) drawNotebookPage(canvas.current, page);

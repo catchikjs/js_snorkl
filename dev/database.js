@@ -62,6 +62,9 @@ export async function database(dir, { omitMigrations = [] } = {}) {
     await db.exec(
       await readFile("supabase/migrations/202611220008_student_password_reset.sql", "utf8"),
     );
+    await db.exec(
+      await readFile("supabase/migrations/202611220009_class_dashboard.sql", "utf8"),
+    );
     return db;
   }
   await db.transaction(async (db) => {
