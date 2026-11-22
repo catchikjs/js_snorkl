@@ -1,3 +1,5 @@
+import { parseRosterClass } from "./roster-class.js";
+
 export class EnrollmentError extends Error {}
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -98,6 +100,27 @@ export async function enrollStudent(db, teacher, input, school, year) {
 }
 
 export async function enrollRosterStudent(db, teacher, input, school, year) {
+  return registerRosterStudent(db, teacher, input, school, year, false);
+}
+
+export async function enrollClassRosterStudent(
+  db,
+  teacher,
+  input,
+  school,
+  year,
+) {
+  return registerRosterStudent(db, teacher, input, school, year, true);
+}
+
+async function registerRosterStudent(
+  db,
+  teacher,
+  input,
+  school,
+  year,
+  classAware,
+) {
   const p = {
     id: input.id,
     class_id: input.class_id,
@@ -113,12 +136,27 @@ export async function enrollRosterStudent(db, teacher, input, school, year) {
     p.label.length > 100
   )
     throw new EnrollmentError("학번·이름과 배정할 학급을 확인하세요.");
+  if (classAware) {
+    const classroom = parseRosterClass(input.class_name);
+    if (
+      !classroom ||
+      !/^[1-9][0-9]{4}$/.test(p.number) ||
+      p.number.slice(0, 3) !== classroom.prefix
+    )
+      throw new EnrollmentError(
+        "학번 앞 세 자리와 입력한 학급이 일치하지 않습니다.",
+      );
+    p.class_name = classroom.name;
+  }
   async function command(op) {
-    const { data, error } = await db.rpc("math_roster_assignment", {
-      u: teacher,
-      op,
-      p,
-    });
+    const { data, error } = await db.rpc(
+      classAware ? "math_class_roster" : "math_roster_assignment",
+      {
+        u: teacher,
+        op,
+        p,
+      },
+    );
     if (error) {
       if (error.message?.includes("roster_class_mismatch"))
         throw new EnrollmentError(
@@ -126,6 +164,10 @@ export async function enrollRosterStudent(db, teacher, input, school, year) {
         );
       if (error.message?.includes("enroll_denied"))
         throw new EnrollmentError("담당 학급에만 학생을 배정할 수 있습니다.");
+      if (error.message?.includes("roster_transfer_denied"))
+        throw new EnrollmentError(
+          "기존 학생 소속을 자동 수정할 수 없습니다. 두 학급의 담당 교사와 명부를 확인하세요.",
+        );
       if (error.message?.includes("roster_mismatch"))
         throw new EnrollmentError(
           "등록된 학생의 학번·이름과 일치하지 않습니다. 기존 계정은 변경하지 않았습니다.",

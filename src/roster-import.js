@@ -1,39 +1,41 @@
 import Papa from "papaparse";
+import {
+  parseRosterClass,
+  rosterClassPrefix,
+} from "../supabase/functions/_shared/roster-class.js";
 
 export const rosterLimit = 200;
 
 export function matchesRosterClass(number, classroom) {
+  const prefix = rosterClassPrefix(classroom);
   return (
-    !classroom.number_prefix ||
+    !prefix ||
     (typeof number === "string" &&
       /^[0-9]{5}$/.test(number.trim()) &&
-      number.trim().startsWith(classroom.number_prefix))
+      number.trim().startsWith(prefix))
   );
 }
 
-export function selectRosterClass(rows, classroom) {
-  if (
-    classroom.number_prefix &&
-    rows.some((row) => !/^[0-9]{5}$/.test(row.number))
-  )
-    throw Error(
-      "학번은 학년 1자리·반 2자리·번호 2자리의 5자리 숫자로 입력하세요.",
+export function routeRosterRows(rows, classes) {
+  return rows.map((row) => {
+    const destination = parseRosterClass(row.class_name);
+    if (
+      !destination ||
+      !/^[1-9][0-9]{4}$/.test(row.number) ||
+      row.number.slice(0, 3) !== destination.prefix
+    )
+      throw Error(
+        `${row.number}: 학번 앞 세 자리와 입력한 학급이 일치하지 않습니다.`,
+      );
+    const matches = classes.filter(
+      (c) => parseRosterClass(c.name)?.name === destination.name,
     );
-  const selected = rows.filter((row) =>
-    matchesRosterClass(row.number, classroom),
-  );
-  if (!selected.length)
-    throw Error(
-      `${classroom.name}의 학번(${classroom.number_prefix}xx)에 해당하는 학생이 없습니다.`,
-    );
-  return { rows: selected, excluded: rows.length - selected.length };
-}
-
-export function validateRosterClass(rows, classroom) {
-  if (rows.some((row) => !matchesRosterClass(row.number, classroom)))
-    throw Error(
-      `${classroom.name}에는 학번 ${classroom.number_prefix}xx 학생만 등록·배정할 수 있습니다. 다른 반의 행을 삭제하세요.`,
-    );
+    if (matches.length !== 1 || !matchesRosterClass(row.number, matches[0]))
+      throw Error(
+        `${destination.name}을 담당 학급에서 찾을 수 없거나 학번 규칙이 다릅니다.`,
+      );
+    return { ...row, class_name: destination.name, class_id: matches[0].id };
+  });
 }
 
 export function parseRosterRows(rows, { requirePassword = false } = {}) {
@@ -43,21 +45,41 @@ export function parseRosterRows(rows, { requirePassword = false } = {}) {
   if (
     String(entries[0]?.columns[0] ?? "").trim() === "학번" &&
     String(entries[0]?.columns[1] ?? "").trim() === "이름"
-  )
+  ) {
+    if (
+      String(entries[0].columns[2] ?? "").trim() !== "학급" ||
+      String(entries[0].columns[3] ?? "").replace(/\s/g, "") !==
+        "초기비밀번호" ||
+      entries[0].columns.length !== 4
+    )
+      throw Error("학번·이름·학급·초기비밀번호 순서의 네 열을 사용하세요.");
     entries.shift();
+  }
   if (!entries.length || entries.length > rosterLimit)
     throw Error(`학생 1~${rosterLimit}명을 입력하세요.`);
   const seen = new Set();
   return entries.map(({ columns, line }) => {
-    if (columns.length < (requirePassword ? 3 : 2) || columns.length > 3)
-      throw Error(`${line}행: 학번·이름·초기 비밀번호 세 열을 확인하세요.`);
-    const [rawNumber, rawLabel, password = ""] = columns.map((cell) =>
+    if (columns.length !== 4)
+      throw Error(`${line}행: 학번·이름·학급·초기비밀번호 네 열을 확인하세요.`);
+    const [rawNumber, rawLabel, rawClass, password = ""] = columns.map((cell) =>
       String(cell ?? ""),
     );
     const number = rawNumber.trim(),
       label = rawLabel.trim();
     if (!number || !label || number.length > 100 || label.length > 100)
       throw Error(`${line}행: 학번과 이름을 확인하세요.`);
+    const classroom = parseRosterClass(rawClass);
+    if (!classroom)
+      throw Error(
+        `${line}행: 학급은 ‘1학년 1반’ 또는 ‘101’ 형식으로 입력하세요.`,
+      );
+    if (
+      !/^[1-9][0-9]{4}$/.test(number) ||
+      number.slice(0, 3) !== classroom.prefix
+    )
+      throw Error(
+        `${line}행: 학번 앞 세 자리와 학급이 일치하지 않습니다 (${number} / ${classroom.name}).`,
+      );
     if (
       (requirePassword || password.length > 0) &&
       (password.length < 6 || password.length > 200)
@@ -66,7 +88,7 @@ export function parseRosterRows(rows, { requirePassword = false } = {}) {
     if (seen.has(number))
       throw Error(`${line}행: 같은 학번이 중복되어 있습니다.`);
     seen.add(number);
-    return { number, label, password };
+    return { number, label, class_name: classroom.name, password };
   });
 }
 
@@ -103,7 +125,7 @@ function cellText(cell, line) {
   if (typeof cell.value === "object" && cell.value.richText)
     return cell.value.richText.map((part) => part.text).join("");
   throw Error(
-    `${line}행: 수식·날짜 대신 학번, 이름, 비밀번호를 텍스트로 입력하세요.`,
+    `${line}행: 수식·날짜 대신 학번, 이름, 학급, 비밀번호를 텍스트로 입력하세요.`,
   );
 }
 
@@ -143,16 +165,13 @@ export async function parseRosterFile(file) {
     const columns = [];
     row.eachCell((cell, col) => {
       const value = cellText(cell, line);
-      if (col > 3 && value.trim())
-        throw Error(`${line}행: 학번·이름·초기 비밀번호 세 열만 사용하세요.`);
-      if (col <= 3) columns[col - 1] = value;
+      if (col > 4 && value.trim())
+        throw Error(
+          `${line}행: 학번·이름·학급·초기비밀번호 네 열만 사용하세요.`,
+        );
+      if (col <= 4) columns[col - 1] = value;
     });
-    rows.push(
-      Array.from(
-        { length: Math.max(2, columns.length) },
-        (_, i) => columns[i] ?? "",
-      ),
-    );
+    rows.push(Array.from({ length: 4 }, (_, i) => columns[i] ?? ""));
   });
   return parseRosterRows(rows);
 }
@@ -182,14 +201,15 @@ export function mergeRosterRows(current, incoming) {
   ];
 }
 
-export async function rosterTemplate(classroom = {}) {
+export async function rosterTemplate() {
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("학생 명부");
   sheet.columns = [
     { header: "학번", key: "number", width: 20 },
     { header: "이름", key: "label", width: 20 },
-    { header: "초기 비밀번호", key: "password", width: 26 },
+    { header: "학급", key: "class_name", width: 22 },
+    { header: "초기비밀번호", key: "password", width: 26 },
   ];
   sheet.columns.forEach((col) => {
     col.numFmt = "@";
@@ -199,16 +219,13 @@ export async function rosterTemplate(classroom = {}) {
   const guide = workbook.addWorksheet("작성 안내");
   guide.getColumn(1).width = 85;
   [
-    "첫 번째 ‘학생 명부’ 시트에 학번·이름·초기 비밀번호를 입력하세요.",
-    "예시: 학번 00101 / 이름 김학생 / 초기 비밀번호는 학생별로 정한 6~200자",
+    "첫 번째 ‘학생 명부’ 시트에 학번·이름·학급·초기비밀번호 네 열을 입력하세요.",
+    "예시: 10101 / 김학생 / 1학년 1반 / 학생별로 정한 6~200자 비밀번호",
+    "학급은 ‘1학년 1반’, ‘101’, ‘1-1’ 형식을 지원합니다. 학번 앞 세 자리와 일치해야 합니다.",
     "기존 학생은 학번·이름을 정확히 쓰고 비밀번호를 비워 두세요. 기존 비밀번호는 유지됩니다.",
     "학번은 텍스트 형식을 유지하세요. 최대 200명, 파일 크기 5MB입니다.",
-    "화면 상단에서 선택한 학급에 등록되며, 담당 교사가 해당 학급에 배포한 활성 평가에도 배정됩니다.",
-    ...(classroom.number_prefix
-      ? [
-          `${classroom.name}의 학번은 ${classroom.number_prefix}xx입니다. 다른 반 학생은 불러오기에서 제외됩니다.`,
-        ]
-      : []),
+    "전체 학년 명부를 한 번에 올릴 수 있습니다. 파일의 학급에 따라 각 반에 나눠 등록·배정합니다.",
+    "기존 학생이 잘못된 반에 등록되어 있으면 소속을 바로잡습니다. 계정·비밀번호·기존 제출은 보존합니다.",
   ].forEach((text) => {
     guide.addRow([text]).font = { name: "Arial", size: 11 };
   });

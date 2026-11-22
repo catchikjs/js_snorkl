@@ -9,23 +9,29 @@ import {
   rosterTemplate,
   rosterLimit,
   matchesRosterClass,
-  selectRosterClass,
-  validateRosterClass,
+  routeRosterRows,
 } from "./roster-import.js";
 import "./roster.css";
 
-const blank = () => ({
+const blank = (class_name) => ({
   id: crypto.randomUUID(),
   number: "",
   label: "",
+  class_name,
+  class_id: "",
   password: "",
   status: "",
   done: false,
 });
 
-export function StudentRoster({ classroom }) {
-  const [rows, setRows] = useState([blank()]);
-  const [members, setMembers] = useState<any[]>([]);
+export function StudentRoster({ classroom, classes }) {
+  const destinations = classes.filter(
+    (c) => c.school === classroom.school && c.year === classroom.year,
+  );
+  const [rows, setRows] = useState([blank(classroom.name)]);
+  const [allMembers, setMembers] = useState<any[]>([]);
+  const [rosterReady, setRosterReady] = useState(false);
+  const members = allMembers.filter((m) => m.class_id === classroom.id);
   const [paste, setPaste] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -35,8 +41,18 @@ export function StudentRoster({ classroom }) {
   const live = useRef(true);
   const fileInput = useRef<HTMLInputElement>(null);
   const load = async () => {
-    const data = await api("roster", { class_id: classroom.id });
-    if (live.current) setMembers(data);
+    const data = await Promise.all(
+      destinations.map(async (c) =>
+        (await api("roster", { class_id: c.id })).map((m) => ({
+          ...m,
+          class_id: c.id,
+        })),
+      ),
+    );
+    if (live.current) {
+      setMembers(data.flat());
+      setRosterReady(true);
+    }
   };
   useEffect(() => {
     live.current = true;
@@ -45,7 +61,19 @@ export function StudentRoster({ classroom }) {
       live.current = false;
     };
   }, [classroom.id]);
-  const existing = (row) => members.find((m) => m.number === row.number.trim());
+  const existing = (row) =>
+    allMembers.find((m) => m.number === row.number.trim());
+  const destination = (row) =>
+    destinations.find((c) => c.name === row.class_name);
+  const moving = (row) =>
+    existing(row) && existing(row).class_id !== destination(row)?.id;
+  const previewCounts = destinations
+    .map((c) => ({
+      name: c.name,
+      count: rows.filter((r) => !r.done && r.number && r.class_name === c.name)
+        .length,
+    }))
+    .filter((c) => c.count);
   const pendingCount = rows.filter((row) => !row.done).length;
   const update = (id, field, value) =>
     setRows((list) =>
@@ -57,10 +85,10 @@ export function StudentRoster({ classroom }) {
     );
 
   function importRows(imported) {
-    const selected = selectRosterClass(imported, classroom);
-    setRows(mergeRosterRows(rows, selected.rows));
+    const routed = routeRosterRows(imported, destinations);
+    setRows(mergeRosterRows(rows, routed));
     setNote(
-      `${classroom.name} ${selected.rows.length}명을 불러왔습니다.${selected.excluded ? ` 다른 반 학생 ${selected.excluded}명은 제외했습니다.` : ""} 명부를 확인한 뒤 아래 버튼을 누르세요.`,
+      `${routed.length}명을 불러왔습니다. 파일에 입력한 학급별로 등록·배정합니다. 아래 반별 인원과 소속 변경 내역을 확인하세요.`,
     );
   }
   async function readFile(e) {
@@ -85,7 +113,7 @@ export function StudentRoster({ classroom }) {
   async function downloadTemplate() {
     setReading(true);
     try {
-      const bytes = await rosterTemplate(classroom);
+      const bytes = await rosterTemplate();
       if (!live.current) return;
       const url = URL.createObjectURL(
         new Blob([bytes], {
@@ -106,13 +134,21 @@ export function StudentRoster({ classroom }) {
   }
   async function register(e) {
     e.preventDefault();
-    if (locked.current || demo) return;
-    const pending = rows.filter((row) => !row.done);
+    if (locked.current || demo || !rosterReady) return;
+    let pending = rows.filter((row) => !row.done);
     try {
-      parseRosterRows(
-        pending.map((row) => [row.number, row.label, row.password]),
+      const validated = parseRosterRows(
+        pending.map((row) => [
+          row.number,
+          row.label,
+          row.class_name,
+          row.password,
+        ]),
       );
-      validateRosterClass(pending, classroom);
+      pending = routeRosterRows(
+        pending.map((row, i) => ({ ...row, ...validated[i] })),
+        destinations,
+      );
       if (pending.some((row) => !existing(row) && !row.password))
         throw Error(
           "신규 학생의 초기 비밀번호를 입력하세요. 기존 학생은 비밀번호를 비워 둘 수 있습니다.",
@@ -138,8 +174,9 @@ export function StudentRoster({ classroom }) {
             throw Error("학생 등록·배정은 연결된 학교에서 사용할 수 있습니다.");
           const { data, error } = await client.functions.invoke("account", {
             body: {
-              op: "enrollRoster",
-              class_id: classroom.id,
+              op: "enrollClassRoster",
+              class_id: row.class_id,
+              class_name: row.class_name,
               id: row.id,
               number: row.number.trim(),
               label: row.label.trim(),
@@ -174,7 +211,7 @@ export function StudentRoster({ classroom }) {
                       ...item,
                       done: true,
                       password: "",
-                      status: `${data.value.already_registered ? "기존 학생 · 비밀번호 유지" : "신규 등록 완료"} · ${data.value.assigned_tasks ? `평가 ${data.value.assigned_tasks}개 배정 완료` : "배정할 활성 평가 없음"}`,
+                      status: `${row.class_name} · ${data.value.moved ? "소속 수정 완료 · 비밀번호 유지" : data.value.already_registered ? "기존 학생 · 비밀번호 유지" : "신규 등록 완료"} · ${data.value.assigned_tasks ? `평가 ${data.value.assigned_tasks}개 배정 완료` : "배정할 활성 평가 없음"}`,
                     }
                   : item,
               ),
@@ -213,20 +250,21 @@ export function StudentRoster({ classroom }) {
       <div className="pagehead">
         <div>
           <h1>학생 관리</h1>
-          <p>{classroom.name} · 학생 명부를 불러와 한 번에 등록·배정하세요.</p>
+          <p>
+            전체 학년 명부를 불러오면 파일의 학급에 따라 각 반에 나눠
+            등록·배정합니다.
+          </p>
         </div>
       </div>
       <section className="panel">
         <h2>학생 일괄 등록·배정</h2>
         <p>
-          <strong>배정할 학급: {classroom.name}</strong>
+          <strong>현재 조회 중인 학급: {classroom.name}</strong>
         </p>
-        {classroom.number_prefix && (
-          <p>
-            학번 {classroom.number_prefix}xx 학생만 등록·배정합니다. 전체 학년
-            명부를 올려도 다른 반 학생은 제외됩니다.
-          </p>
-        )}
+        <p>
+          등록할 학급은 파일의 ‘학급’ 열로 정합니다. 학번 앞 세 자리와 학급이
+          일치해야 합니다.
+        </p>
         {members.some(
           (member) => !matchesRosterClass(member.number, classroom),
         ) && (
@@ -236,14 +274,15 @@ export function StudentRoster({ classroom }) {
           </p>
         )}
         <p>
-          등록한 학생을 이 학급에 내가 배포한 활성 평가에도 배정합니다. 기존
-          학생은 학번·이름을 확인하고 비밀번호를 유지합니다.
+          각 학생을 소속 학급에 내가 배포한 활성 평가에 배정합니다. 기존 학생의
+          잘못된 소속은 바로잡고 이전 반의 잘못된 평가 배정만 회수합니다.
+          계정·비밀번호·기존 제출 답안은 보존합니다.
         </p>
         <div className="roster-file">
           <h3>명부 파일로 불러오기</h3>
           <p>
-            첫 번째 시트에 학번 · 이름 · 초기 비밀번호 열을 입력하세요. 기존
-            학생은 비밀번호를 비워 두고, 신규 학생은 6~200자로 입력하세요.
+            첫 번째 시트에 학번 · 이름 · 학급 · 초기비밀번호 네 열을 입력하세요.
+            기존 학생은 비밀번호를 비워 두고, 신규 학생은 6~200자로 입력하세요.
           </p>
           <p className="roster-help">
             엑셀(.xlsx), CSV, TSV · 최대 200명 / 5MB · 학번은 텍스트 형식으로
@@ -289,7 +328,9 @@ export function StudentRoster({ classroom }) {
               spellCheck={false}
               disabled={busy || reading}
               onChange={(e) => setPaste(e.target.value)}
-              placeholder={"학번\t이름\t초기 비밀번호"}
+              placeholder={
+                "학번\t이름\t학급\t초기비밀번호\n10101\t김학생\t1학년 1반\t"
+              }
             />
           </label>
           <button
@@ -317,6 +358,12 @@ export function StudentRoster({ classroom }) {
           <fieldset disabled={busy || reading}>
             <legend className="sr-only">등록·배정할 학생</legend>
             <h3>명부 확인 · 처리 대기 {pendingCount}명</h3>
+            {!!previewCounts.length && (
+              <p role="status">
+                학급별 처리 예정:{" "}
+                {previewCounts.map((c) => `${c.name} ${c.count}명`).join(" · ")}
+              </p>
+            )}
             <div className="roster-inputs">
               {rows.map((row, index) => (
                 <div className="roster-row" key={index}>
@@ -341,6 +388,23 @@ export function StudentRoster({ classroom }) {
                       disabled={row.done}
                       onChange={(e) => update(row.id, "label", e.target.value)}
                     />
+                  </label>
+                  <label>
+                    학급
+                    <select
+                      aria-label={`${index + 1}행 학급`}
+                      value={row.class_name}
+                      disabled={row.done}
+                      onChange={(e) =>
+                        update(row.id, "class_name", e.target.value)
+                      }
+                    >
+                      {destinations.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label>
                     초기 비밀번호
@@ -377,9 +441,11 @@ export function StudentRoster({ classroom }) {
                   <p className="roster-row-status" role="status">
                     {row.status ||
                       (row.number &&
-                        (existing(row)
-                          ? "기존 학생 · 평가에 배정"
-                          : "신규 학생 · 계정 등록 후 배정"))}
+                        (moving(row)
+                          ? `소속 수정 예정: ${destinations.find((c) => c.id === existing(row).class_id)?.name} → ${row.class_name} · 기존 비밀번호·제출 보존`
+                          : existing(row)
+                            ? "기존 학생 · 평가에 배정"
+                            : "신규 학생 · 계정 등록 후 배정"))}
                   </p>
                 </div>
               ))}
@@ -388,12 +454,17 @@ export function StudentRoster({ classroom }) {
               <button
                 type="button"
                 disabled={pendingCount >= rosterLimit}
-                onClick={() => setRows((list) => [...list, blank()])}
+                onClick={() =>
+                  setRows((list) => [...list, blank(classroom.name)])
+                }
               >
                 <Plus size={18} />
                 학생 추가
               </button>
-              <button className="primary" disabled={demo || !pendingCount}>
+              <button
+                className="primary"
+                disabled={demo || !pendingCount || !rosterReady}
+              >
                 {busy
                   ? "등록·배정 중…"
                   : pendingCount
@@ -410,6 +481,14 @@ export function StudentRoster({ classroom }) {
       <section className="panel">
         <h2>등록된 학생 {members.length}명</h2>
         <p>
+          {destinations
+            .map(
+              (c) =>
+                `${c.name} ${allMembers.filter((m) => m.class_id === c.id).length}명`,
+            )
+            .join(" · ")}
+        </p>
+        <p>
           기존 학생의 학번·이름을 명부에 넣고 등록·배정하면, 누락된 평가 배정도
           함께 처리합니다.
         </p>
@@ -419,6 +498,7 @@ export function StudentRoster({ classroom }) {
               <tr>
                 <th scope="col">학번</th>
                 <th scope="col">이름</th>
+                <th scope="col">학급</th>
               </tr>
             </thead>
             <tbody>
@@ -426,6 +506,7 @@ export function StudentRoster({ classroom }) {
                 <tr key={member.uid}>
                   <td>{member.number}</td>
                   <td>{member.label}</td>
+                  <td>{classroom.name}</td>
                 </tr>
               ))}
             </tbody>

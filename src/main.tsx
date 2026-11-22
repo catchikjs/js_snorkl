@@ -656,7 +656,7 @@ function ClassApp({ uid }) {
           </select>
         </header>
         <div className="content">
-          {teacher && cl && page === "학생 관리" && <StudentRoster key={cl.id} classroom={cl} />}
+          {teacher && cl && page === "학생 관리" && <StudentRoster key={cl.id} classroom={cl} classes={classes} />}
           {note && (
             <p className="notice" role="alert">
               {note}

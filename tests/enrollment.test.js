@@ -186,15 +186,25 @@ test("retry cannot reuse an unrelated existing Auth identity", async () => {
   );
 });
 
-test("Excel paste preserves leading zero and password whitespace, validates duplicates and columns", () => {
+test("Excel paste validates four columns and preserves password whitespace", () => {
   assert.deepEqual(
-    parseRosterPaste("학번\t이름\t초기 비밀번호\r\n00101\t연습\t abcdef \r\n"),
-    [{ number: "00101", label: "연습", password: " abcdef " }],
+    parseRosterPaste(
+      "학번\t이름\t학급\t초기비밀번호\r\n10101\t연습\t101\t abcdef \r\n",
+    ),
+    [
+      {
+        number: "10101",
+        label: "연습",
+        class_name: "1학년 1반",
+        password: " abcdef ",
+      },
+    ],
   );
-  assert.throws(() => parseRosterPaste("001\t연습\tabcde"), /6~200/);
+  assert.throws(() => parseRosterPaste("10101\t연습\t101\tabcde"), /6~200/);
   assert.throws(
-    () => parseRosterPaste("001\t연습\tabcdef\n001\t중복\tabcdef"),
+    () =>
+      parseRosterPaste("10101\t연습\t101\tabcdef\n10101\t중복\t101\tabcdef"),
     /중복/,
   );
-  assert.throws(() => parseRosterPaste("001,연습,abcdef"), /세 열/);
+  assert.throws(() => parseRosterPaste("10101,연습,101,abcdef"), /네 열/);
 });

@@ -37,14 +37,15 @@
 }
 .roster-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.4fr auto;
+  grid-template-columns: 1fr 1fr 1.2fr 1.4fr auto;
   gap: 12px;
   align-items: end;
 }
 .roster-row label {
   min-width: 0;
 }
-.roster-row input {
+.roster-row input,
+.roster-row select {
   display: block;
   width: 100%;
   margin-top: 6px;
