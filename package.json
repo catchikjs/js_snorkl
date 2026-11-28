@@ -32,6 +32,7 @@
     "exceljs": "^4.4.0",
     "katex": "^0.19.1",
     "lucide-react": "^1.76.0",
+    "mathlive": "^0.111.4",
     "papaparse": "^5.7.1",
     "pdfjs-dist": "^6.5.438",
     "qrcode": "^1.5.4",

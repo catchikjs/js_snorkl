@@ -113,8 +113,16 @@ test("teacher distributes a cropped PDF and an already-open student screen loads
   await expect(page.getByAltText("문제 자료 1")).toBeVisible();
   const expectedImage = await page.getByAltText("문제 자료 1").getAttribute("src");
   await page.getByRole("button", { name: "ƒ 수식" }).first().click();
+  await expect(page.getByRole("dialog", { name: "수식 편집기" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /연산/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("math-field")).toBeVisible();
+  await page.getByRole("button", { name: "분수 넣기" }).click();
+  await expect
+    .poll(() => page.locator("math-field").evaluate((field) => field.value))
+    .toContain("\\frac");
   await page.getByRole("dialog").locator("textarea").fill("\\frac{x-1}{2}");
-  await page.getByRole("button", { name: "적용", exact: true }).click();
+  await expect(page.getByText("학생 화면 표시")).toBeVisible();
+  await page.getByRole("button", { name: "넣기", exact: true }).click();
   await page.getByRole("button", { name: "임시 저장" }).click();
   await expect(page.getByText("저장했습니다.", { exact: true }).first()).toBeVisible();
   await page.getByRole("button", { name: "답안·루브릭", exact: true }).click();
