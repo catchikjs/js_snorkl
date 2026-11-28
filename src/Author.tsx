@@ -3,7 +3,12 @@ import QRCode from "qrcode";
 import { api, message, fileUrl, demo } from "./api";
 import { Field, Rich, txt, plain } from "./MathEditor";
 import { Capture } from "./Capture";
-import { matchesDraft, prepareApproval } from "./authoring.js";
+import {
+  matchesDraft,
+  prepareApproval,
+  removeQuestion,
+  reorderQuestions,
+} from "./authoring.js";
 import { matchesRosterClass } from "./roster-import.js";
 import { DistributionNotice } from "./DistributionNotice";
 export const blankQuestion = () => ({
@@ -81,12 +86,22 @@ function Schedule({ label, value, set }) {
     </label>
   );
 }
-export function Author({ id, classes, open, changed }) {
+export function Author({
+  id,
+  classes,
+  open,
+  changed,
+  startWithChooser = false,
+  onStarted,
+}) {
   const [meta, info] = useState<any>(),
     [w, set] = useState<any>(),
     [pos, index] = useState(0),
     [tab, show] = useState(0),
     [capture, clip] = useState(false),
+    [captureMode, setCaptureMode] = useState<"crop" | "whole">("crop"),
+    [sourceChooser, setSourceChooser] = useState(startWithChooser),
+    [deleteQuestionOpen, setDeleteQuestionOpen] = useState(false),
     [note, say] = useState(""),
     [distributionNote, setDistributionNote] = useState(""),
     [distributionResult, setDistributionResult] = useState<any[] | null>(null),
@@ -205,6 +220,29 @@ export function Author({ id, classes, open, changed }) {
       ),
     pub = (k, v) => update({ ...q, public: { ...q.public, [k]: v } }),
     priv = (k, v) => update({ ...q, private: { ...q.private, [k]: v } });
+  const finishSourceChoice = () => {
+    setSourceChooser(false);
+    onStarted?.();
+  };
+  const openCapture = (mode: "crop" | "whole") => {
+    setCaptureMode(mode);
+    clip(true);
+  };
+  const moveQuestion = (to) => {
+    const questions = reorderQuestions(w.questions, pos, to);
+    if (questions === w.questions) return;
+    setW("questions", questions);
+    index(to);
+    say(`문항을 ${to + 1}번으로 이동하고 번호를 다시 정렬했습니다.`);
+  };
+  const deleteQuestion = () => {
+    const questions = removeQuestion(w.questions, pos);
+    if (questions === w.questions) return;
+    setW("questions", questions);
+    index(Math.min(pos, questions.length - 1));
+    setDeleteQuestionOpen(false);
+    say("문항을 삭제하고 번호를 다시 정렬했습니다.");
+  };
   const dirty = JSON.stringify(w) !== JSON.stringify(meta.working);
   const distributionBlocked = busy
     ? "요청을 처리하고 있습니다. 잠시 기다려 주세요."
@@ -270,14 +308,17 @@ export function Author({ id, classes, open, changed }) {
           <small>평가 관리</small>
           <h1>{w.title}</h1>
         </div>
-        <button
-          onClick={() => {
-            name(w.title + " 복사본");
-            copying(true);
-          }}
-        >
-          복사
-        </button>
+        <div className="tools">
+          <button onClick={() => setSourceChooser(true)}>출제 방식</button>
+          <button
+            onClick={() => {
+              name(w.title + " 복사본");
+              copying(true);
+            }}
+          >
+            복사
+          </button>
+        </div>
       </div>
       <div className="tabs">
         {["문제 편집", "답안·루브릭", "학급별 배포"].map((s, i) => (
@@ -316,6 +357,27 @@ export function Author({ id, classes, open, changed }) {
               }}
             >
               ＋ 문항
+            </button>
+            <button
+              disabled={pos === 0}
+              aria-label="현재 문항을 앞으로 이동"
+              onClick={() => moveQuestion(pos - 1)}
+            >
+              ← 앞으로 이동
+            </button>
+            <button
+              disabled={pos === w.questions.length - 1}
+              aria-label="현재 문항을 뒤로 이동"
+              onClick={() => moveQuestion(pos + 1)}
+            >
+              뒤로 이동 →
+            </button>
+            <button
+              className="danger-text"
+              disabled={w.questions.length === 1}
+              onClick={() => setDeleteQuestionOpen(true)}
+            >
+              현재 문항 삭제
             </button>
           </div>
           <div className="mobile-tabs tools">
@@ -425,8 +487,11 @@ export function Author({ id, classes, open, changed }) {
                     >
                       선지 추가
                     </button>
-                    <button onClick={() => clip(true)}>
+                    <button onClick={() => openCapture("crop")}>
                       파일 · 영역 가져오기
+                    </button>
+                    <button onClick={() => openCapture("whole")}>
+                      파일 한 장 그대로
                     </button>
                   </div>
                   {q.public.images.map((im, i) => (
@@ -1062,9 +1127,103 @@ export function Author({ id, classes, open, changed }) {
           </section>
         </div>
       )}
+      {sourceChooser && (
+        <div className="overlay authoring-source-overlay">
+          <section
+            className="authoring-source-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="authoring-source-title"
+          >
+            <header>
+              <div>
+                <small>평가 만들기</small>
+                <h2 id="authoring-source-title">어떻게 문제를 만들까요?</h2>
+                <p>출제 방식을 고른 뒤 한곳에서 검토하고 AI 답안을 생성할 수 있습니다.</p>
+              </div>
+              <button
+                aria-label="출제 방식 선택 닫기"
+                onClick={finishSourceChoice}
+              >
+                닫기
+              </button>
+            </header>
+            <div className="authoring-source-grid">
+              <button className="source-card" onClick={finishSourceChoice}>
+                <span className="source-icon">✎</span>
+                <strong>직접 입력</strong>
+                <span>문제와 선지를 입력하고 수식 편집기로 수식을 작성합니다.</span>
+                <b>바로 시작</b>
+              </button>
+              <button
+                className="source-card"
+                onClick={() => {
+                  finishSourceChoice();
+                  openCapture("whole");
+                }}
+              >
+                <span className="source-icon">▤</span>
+                <strong>파일 그대로 출제</strong>
+                <span>PDF·이미지 한 장 전체를 가공 없이 한 문항으로 사용합니다.</span>
+                <b>파일 선택</b>
+              </button>
+              <button
+                className="source-card"
+                onClick={() => {
+                  finishSourceChoice();
+                  openCapture("crop");
+                }}
+              >
+                <span className="source-icon">⌗</span>
+                <strong>파일 영역 직접 선택</strong>
+                <span>PDF·이미지에서 필요한 영역을 골라 현재 문항에 넣습니다.</span>
+                <b>영역 선택</b>
+              </button>
+              <button className="source-card planned" disabled>
+                <span className="source-icon">✣</span>
+                <strong>PDF 자동 문항 분할</strong>
+                <span>AI가 문항과 선지를 나누고 편집 가능한 초안을 만듭니다.</span>
+                <b>2단계에서 제공</b>
+              </button>
+              <button className="source-card planned" disabled>
+                <span className="source-icon">AI</span>
+                <strong>교육과정 기반 AI 생성</strong>
+                <span>과목·단원·성취기준·난이도·문항 수에 맞춰 생성합니다.</span>
+                <b>3단계에서 제공</b>
+              </button>
+            </div>
+            <p className="source-footnote">
+              어떤 방식이든 AI 답안 초안 → 교사 검토·수정 → 최종 확정 → 학급 배포 순서로 진행됩니다.
+            </p>
+          </section>
+        </div>
+      )}
+      {deleteQuestionOpen && (
+        <div className="overlay">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-question-title"
+          >
+            <h2 id="delete-question-title">{pos + 1}번 문항을 삭제할까요?</h2>
+            <p>
+              이 문항의 문제, 첨부 파일, 답안과 루브릭이 편집본에서 삭제됩니다.
+              남은 문항 번호는 1번부터 자동으로 다시 정렬됩니다.
+            </p>
+            <p>변경 내용은 ‘임시 저장’ 또는 ‘저장하고 AI 답안 초안 생성’을 눌러야 저장됩니다.</p>
+            <footer>
+              <button onClick={() => setDeleteQuestionOpen(false)}>취소</button>
+              <button className="danger" onClick={deleteQuestion}>
+                문항 삭제
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
       {capture && (
         <Capture
           book={id}
+          wholePage={captureMode === "whole"}
           close={() => clip(false)}
           insert={(image, fresh) => {
             if (fresh) {

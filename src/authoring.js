@@ -3,6 +3,33 @@ import { validateBook } from "../supabase/functions/_shared/contract.js";
 const fields = ["conditions", "answer", "solution", "alternatives", "errors", "check"];
 const hasText = (parts = []) => parts.some((p) => (p.text || p.latex || "").trim());
 
+export function reorderQuestions(questions, from, to) {
+  if (
+    !Array.isArray(questions) ||
+    from < 0 ||
+    to < 0 ||
+    from >= questions.length ||
+    to >= questions.length ||
+    from === to
+  )
+    return questions;
+  const next = [...questions],
+    [question] = next.splice(from, 1);
+  next.splice(to, 0, question);
+  return next;
+}
+
+export function removeQuestion(questions, position) {
+  if (
+    !Array.isArray(questions) ||
+    questions.length <= 1 ||
+    position < 0 ||
+    position >= questions.length
+  )
+    return questions;
+  return questions.filter((_, index) => index !== position);
+}
+
 export function matchesDraft(draft, working, saved, position) {
   if (!draft || draft.position !== position + 1) return false;
   if (!(draft.matches_working ?? draft.revision === saved.revision)) return false;

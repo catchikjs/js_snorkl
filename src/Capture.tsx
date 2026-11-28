@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { upload } from "./api";
-export function Capture({ book, insert, close }) {
+export function Capture({ book, insert, close, wholePage = false }) {
   const [file, setFile] = useState<File>(),
     [id, setId] = useState(""),
     [pg, page] = useState(1),
@@ -118,7 +118,7 @@ export function Capture({ book, insert, close }) {
     ];
   }
   function move(e) {
-    if (!drag.current) return;
+    if (wholePage || !drag.current) return;
     const [x, y] = point(e),
       {
         start: [a, b],
@@ -149,7 +149,7 @@ export function Capture({ book, insert, close }) {
   }
   function crop() {
     const c = canvas.current,
-      [x, y, w, h] = rect,
+      [x, y, w, h] = wholePage ? [0, 0, 1, 1] : rect,
       out = document.createElement("canvas");
     out.width = Math.max(1, Math.round(w * c.width));
     out.height = Math.max(1, Math.round(h * c.height));
@@ -168,7 +168,11 @@ export function Capture({ book, insert, close }) {
       );
     const png = out.toDataURL();
     if (png.length > 4000000) {
-      err("범위를 줄여 다시 선택하세요.");
+      err(
+        wholePage
+          ? "페이지 이미지가 너무 큽니다. 원본 파일의 해상도나 용량을 줄여 주세요."
+          : "범위를 줄여 다시 선택하세요.",
+      );
       return;
     }
     setPreview(png);
@@ -180,7 +184,7 @@ export function Capture({ book, insert, close }) {
       const image = crop();
       if (!image) return;
       await upload("math-sources", id, file);
-      const [x, y, w, h] = rect,
+      const [x, y, w, h] = wholePage ? [0, 0, 1, 1] : rect,
         a = source.current.point(x, y),
         b = source.current.point(x + w, y + h);
       insert(
@@ -208,9 +212,15 @@ export function Capture({ book, insert, close }) {
   }
   return (
     <div className="overlay">
-      <section role="dialog" aria-label="파일에서 문제 가져오기">
+      <section
+        role="dialog"
+        aria-label={wholePage ? "파일 그대로 출제" : "파일에서 문제 가져오기"}
+      >
         <header>
-          <h2>파일에서 문제 가져오기</h2>
+          <div>
+            <h2>{wholePage ? "파일 그대로 출제" : "파일에서 문제 가져오기"}</h2>
+            {wholePage && <p>선택한 페이지 전체가 학생에게 그대로 보입니다.</p>}
+          </div>
           <button onClick={close}>닫기</button>
         </header>
         <label>
@@ -259,22 +269,23 @@ export function Capture({ book, insert, close }) {
           <button onClick={() => scale(zoom === 2 ? 1 : zoom + 0.5)}>
             확대 {zoom}×
           </button>
-          {["영역 선택", "이동", "크기"].map((m) => (
-            <button
-              className={mode === m ? "selected" : ""}
-              key={m}
-              onClick={() => setMode(m)}
-            >
-              {m}
-            </button>
-          ))}
+          {!wholePage &&
+            ["영역 선택", "이동", "크기"].map((m) => (
+              <button
+                className={mode === m ? "selected" : ""}
+                key={m}
+                onClick={() => setMode(m)}
+              >
+                {m}
+              </button>
+            ))}
         </div>
         <div className="scroll-paper">
           <div
             className="crop"
             style={{ width: zoom * 100 + "%" }}
             onPointerDown={(e) => {
-              if (!ready) return;
+              if (!ready || wholePage) return;
               e.currentTarget.setPointerCapture(e.pointerId);
               drag.current = { start: point(e), old: rect };
             }}
@@ -282,7 +293,7 @@ export function Capture({ book, insert, close }) {
             onLostPointerCapture={() => (drag.current = null)}
           >
             <canvas ref={canvas} />
-            {ready && (
+            {ready && !wholePage && (
               <i
                 style={{
                   left: rect[0] * 100 + "%",
@@ -296,7 +307,7 @@ export function Capture({ book, insert, close }) {
         </div>
         {error && <p role="alert">{error}</p>}
         <button disabled={!ready} onClick={crop}>
-          선택 범위 미리보기
+          {wholePage ? "전체 페이지 미리보기" : "선택 범위 미리보기"}
         </button>
         {preview && (
           <>
@@ -310,7 +321,7 @@ export function Capture({ book, insert, close }) {
                 className="primary"
                 onClick={() => save(false)}
               >
-                현재 문항에 넣기
+                {wholePage ? "현재 문항으로 사용" : "현재 문항에 넣기"}
               </button>
             </footer>
           </>

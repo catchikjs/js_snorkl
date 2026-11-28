@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { matchesDraft, prepareApproval } from "../src/authoring.js";
+import {
+  matchesDraft,
+  prepareApproval,
+  removeQuestion,
+  reorderQuestions,
+} from "../src/authoring.js";
 
 const text = (value) => [{ type: "text", text: value }];
 function fixture() {
@@ -52,4 +57,17 @@ test("approval reports the specific rubric or schedule issue", () => {
   assert.throws(() => prepareApproval(edited, saved), /문항 2.*9점.*10점/);
   edited.ends = edited.starts;
   assert.throws(() => prepareApproval(edited, saved), /마감 시간/);
+});
+
+test("question removal and reordering preserve content while visible positions renumber", () => {
+  const questions = ["첫째", "둘째", "셋째"].map((label) => ({ label }));
+  const removed = removeQuestion(questions, 1);
+  assert.deepEqual(removed.map((q) => q.label), ["첫째", "셋째"]);
+  assert.deepEqual(removed.map((_, index) => index + 1), [1, 2]);
+
+  const moved = reorderQuestions(removed, 1, 0);
+  assert.deepEqual(moved.map((q) => q.label), ["셋째", "첫째"]);
+  assert.equal(reorderQuestions(moved, 0, 9), moved);
+  assert.equal(removeQuestion([questions[0]], 0).length, 1);
+  assert.equal(removeQuestion(moved, 9), moved);
 });

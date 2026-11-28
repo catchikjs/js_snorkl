@@ -279,6 +279,7 @@ function ClassApp({ uid }) {
     [detail, details] = useState<any>(),
     [library, books] = useState([]),
     [book, edit] = useState(""),
+    [newBookSetup, setNewBookSetup] = useState(""),
     [sub, inspect] = useState(""),
     [qId, solve] = useState(""),
     [filter, filterBy] = useState("전체"),
@@ -513,6 +514,7 @@ function ClassApp({ uid }) {
     const working = newWork(),
       id = await api("new", { class_id: cl.id, title: working.title, working });
     go("내 평가");
+    setNewBookSetup(id);
     edit(id);
     refresh();
   }
@@ -845,6 +847,8 @@ function ClassApp({ uid }) {
               classes={classes}
               open={edit}
               changed={() => safe(refresh)}
+              startWithChooser={newBookSetup === book}
+              onStarted={() => setNewBookSetup("")}
             />
           )}
           {task && detail && !sub && (

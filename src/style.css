@@ -598,6 +598,89 @@ section > header {
   background: white;
   z-index: 1;
 }
+.authoring-source-overlay {
+  z-index: 12;
+}
+.overlay > .authoring-source-dialog {
+  width: min(920px, 100%);
+  padding: 28px;
+}
+.authoring-source-dialog header {
+  align-items: flex-start;
+}
+.authoring-source-dialog header h2 {
+  margin: 3px 0 6px;
+}
+.authoring-source-dialog header p,
+.source-footnote {
+  color: var(--muted);
+  margin: 0;
+}
+.authoring-source-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+.source-card {
+  min-height: 190px;
+  padding: 18px;
+  border-color: #dce2ef;
+  background: white;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+}
+.source-card:hover:not(:disabled) {
+  border-color: var(--blue);
+  box-shadow: 0 8px 24px #24469d18;
+  transform: translateY(-1px);
+}
+.source-card strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+.source-card > span:not(.source-icon) {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.source-card b {
+  margin-top: auto;
+  color: var(--brand);
+  font-size: 0.78rem;
+}
+.source-card.planned {
+  opacity: 0.72;
+  background: #f6f7fa;
+}
+.source-card.planned b {
+  color: var(--muted);
+}
+.source-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #edf1ff;
+  color: #3154ce;
+  font-weight: 850;
+}
+.source-footnote {
+  padding-top: 18px;
+  font-size: 0.82rem;
+}
+.danger-text {
+  color: #a6372a;
+}
+.danger {
+  border-color: #bd3d32;
+  background: #bd3d32;
+  color: white;
+}
 .math-editor-overlay {
   z-index: 20;
   padding: 18px;
@@ -1060,6 +1143,9 @@ footer {
   .brand {
     font-size: 1rem;
   }
+  .authoring-source-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 @media (max-width: 440px) {
   .hero-art {
@@ -1077,6 +1163,12 @@ footer {
   }
   .pagehead {
     flex-wrap: wrap;
+  }
+  .authoring-source-grid {
+    grid-template-columns: 1fr;
+  }
+  .source-card {
+    min-height: 160px;
   }
 }
 @media print {
